@@ -1,5 +1,5 @@
 import numpy as np
-from Part1_2_Base_Controller_Interface import BaseControllerInterface
+from base_controller_interface import BaseControllerInterface
 
 class DummyController(BaseControllerInterface):
     """

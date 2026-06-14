@@ -60,16 +60,25 @@ python C:\ic_env\Lib\site-packages\robosuite\scripts\setup_macros.py
 
 ## 3. Project Structure & Execution
 
-Phase 1 consists of three Python scripts.
+> ⚠️ **CRITICAL WINDOWS EXECUTION RULE:** To prevent Windows from accidentally invoking the global system Python (which causes `ModuleNotFoundError: No module named 'moduel_name'`), always use the absolute path to the virtual environment's executable (`C:\ic_env\Scripts\python.exe`). 
+> 
+> Always navigate (`cd`) into the specific task directory before executing the respective script so that `robosuite` and `MuJoCo` can resolve local asset paths correctly.
 
-Execute the scripts in the following order inside your active virtual environment:
+### Step-by-Step Execution
+
+First, open PowerShell and navigate to the directory containing your Phase 1 scripts:
+```powershell
+cd C:\GitHub\Vision-Based-Contact-Rich-Robot-Manipulation\Environment_and_Pipeline_Preparation
+```
+
+Now, execute the scripts sequentially using the explicit environment interpreter:
 
 ### Task 1.1 Verification of Environment 
 
-Verifies that robosuite and MuJoCo initialize correctly, step functions work, and image tensors are received downsampled to $84 \times 84 \times 3$.
+Initializes the NutAssembly environment with a Franka Emika Panda robot, tests a single simulation step, and verifies the camera frame buffer.
 
 ```powershell
-python Part1_1_Robosuite_Testing.py
+C:\ic_env\Scripts\python.exe test_robosuite.py
 ```
 
 ### Task 1.2 Base Controller Interface 
@@ -77,7 +86,7 @@ python Part1_1_Robosuite_Testing.py
 Defines the BaseController abstract class layout enforcing the mandatory reset() and act(obs) methods via Python's Abstract Base Classes (abc).
 
 ```powershell
-python Part1_2_Test_Base_Controller_Interface.py
+C:\ic_env\Scripts\python.exe test_base_controller_interface.py
 ```
 
 ### Task 1.3 Vision Pipeline CNN Encoder
@@ -85,7 +94,7 @@ python Part1_2_Test_Base_Controller_Interface.py
 Implements a Nature-CNN architecture using PyTorch to encode raw agentview_image matrices into high-quality $256$-dimensional state embeddings.
 
 ```powershell
-python Part1_3_CNN_Vision_Encoder.py
+C:\ic_env\Scripts\python.exe CNN_vision_encoder.py
 ```
 
 All tasks for Phase 1 are verified and functional. Ready to proceed to Phase 2.
