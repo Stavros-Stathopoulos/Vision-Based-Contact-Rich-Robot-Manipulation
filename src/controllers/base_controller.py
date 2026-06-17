@@ -1,19 +1,16 @@
-from abc import ABC, abstractmethod
 import numpy as np
+from abc import ABC, abstractmethod
 
-class BaseControllerInterface(ABC):
+class BaseController(ABC):
     """
     Abstract Base Class representing the common interface for all controllers
     in the Intelligent Control project.
     """
-    def __init__(self, action_dim: int):
+    def __init__(self):
         """
         Initializes the controller.
-        
-        Args:
-            action_dim (int): The dimension of the robot's action space.
         """
-        self.action_dim = action_dim
+        pass
     
     @abstractmethod
 
@@ -25,7 +22,7 @@ class BaseControllerInterface(ABC):
         pass
 
     @abstractmethod
-    def act(self, obs: dict) -> np.ndarray:
+    def act(self, obs: dict) -> tuple[np.ndarray, dict]:
         """
         Selects an action based on the current environment observation.
         Must be implemented by any subclass.
@@ -36,5 +33,6 @@ class BaseControllerInterface(ABC):
                         
         Returns:
             np.ndarray: The continuous action vector to be sent to the robot.
+            dict: Additional information about the action selection.
         """
         pass
