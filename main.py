@@ -13,8 +13,8 @@ env = suite.make(
     controller_configs=controller_config,
 
     # Vision-based setting
-    has_renderer=True,
-    has_offscreen_renderer=False,
+    has_renderer=False,
+    has_offscreen_renderer=True,
     use_camera_obs=True,
     use_object_obs=False,
 

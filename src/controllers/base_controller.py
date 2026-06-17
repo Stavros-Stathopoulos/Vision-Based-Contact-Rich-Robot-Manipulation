@@ -1,7 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 
-class BaseControllerInterface(ABC):
+class BaseController(ABC):
     """
     Abstract Base Class representing the common interface for all controllers
     in the Intelligent Control project.
