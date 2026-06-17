@@ -2,7 +2,7 @@ import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
 
 from src.controllers import SimpleController
-from src.utils import logger
+from src.utils.logger import TerminalLogger as logger
 
 
 controller_config = load_composite_controller_config(controller='BASIC')
