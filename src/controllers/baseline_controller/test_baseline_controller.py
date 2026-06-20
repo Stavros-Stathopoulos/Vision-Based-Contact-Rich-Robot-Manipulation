@@ -1,7 +1,7 @@
 import numpy as np
 import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
-from controller import BaselineController
+from .controller import HeuristicBaselineController
 
 print("Setting up baseline evaluation environment...")
 
@@ -24,7 +24,7 @@ env = suite.make(
 )
 
 # Initialize Controller and Environment
-controller = BaselineController(action_dim=env.action_spec[0].shape[0])
+controller = HeuristicBaselineController(action_dim=env.action_spec[0].shape[0])
 obs = env.reset()
 controller.reset()
 

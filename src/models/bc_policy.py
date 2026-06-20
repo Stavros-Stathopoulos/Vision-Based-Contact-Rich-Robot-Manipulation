@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from encoders.cnn_encoder import CNNEncoder
+from ..encoders.cnn_encoder import CNNEncoder
 
 
 class BehaviorCloningPolicy(nn.Module):

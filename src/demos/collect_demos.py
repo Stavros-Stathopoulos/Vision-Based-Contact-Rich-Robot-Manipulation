@@ -1,14 +1,15 @@
 import os
 import numpy as np
-from openai import images
+import gc  # Για χειροκίνητο garbage collection μετά από κάθε επεισόδιο, αν χρειαστεί
 import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
-from controllers.baseline_controller import HeuristicBaselineController
+from ..controllers.baseline_controller import HeuristicBaselineController
 
 # Ρυθμίσεις συλλογής
-NUM_SUCCESSFUL_EPISODES = 25  # Πόσες πλήρεις και επιτυχημένες τροχιές θέλουμε να αποθηκεύσουμε στο dataset μας
-MAX_STEPS_PER_EPISODE = 100  # Μέγιστος αριθμός βημάτων ανά επεισόδιο (5 δευτερόλεπτα με 20Hz). Hard limit για αποφυγή infinite loops σε περίπτωση αποτυχίας.
-OUTPUT_FILE = "expert_demonstrations.npz"
+NUM_SUCCESSFUL_EPISODES = 10  # Πόσες πλήρεις και επιτυχημένες τροχιές θέλουμε να αποθηκεύσουμε στο dataset μας
+MAX_STEPS_PER_EPISODE = 50  # Μέγιστος αριθμός βημάτων ανά επεισόδιο (5 δευτερόλεπτα με 20Hz). Hard limit για αποφυγή infinite loops σε περίπτωση αποτυχίας.
+MAX_TOTAL_EPISODES = 100 # Μέγιστος αριθμός επεισοδίων
+OUTPUT_FILE = "expert_demos.npz"  # Αρχείο όπου θα αποθηκευτούν οι εικόνες και οι δράσεις των επιτυχημένων τροχιών
 
 print("Initializing environment for data collection")
 controller_config = load_composite_controller_config(controller="BASIC")
@@ -38,9 +39,9 @@ actions = []
 successful_episodes_counter = 0
 episode_idx = 0
 
-print(f"Starting data collection. Target: {NUM_SUCCESSFUL_EPISODES} successful episodes.")
+print(f"Starting data collection. Target: {NUM_SUCCESSFUL_EPISODES} successful episodes or max {MAX_TOTAL_EPISODES} attempts.")
 
-while successful_episodes_counter < NUM_SUCCESSFUL_EPISODES:
+while successful_episodes_counter < NUM_SUCCESSFUL_EPISODES and episode_idx < MAX_TOTAL_EPISODES:
     episode_idx += 1
     obs = env.reset()
     controller.reset()
@@ -71,20 +72,29 @@ while successful_episodes_counter < NUM_SUCCESSFUL_EPISODES:
         successful_episodes_counter += 1
         images.extend(ep_images)
         actions.extend(ep_actions)
-        print(f"Episode {episode_idx}: SUCCESS! Reward: {ep_reward:.2f}. Total successful collected: {successful_episodes_counter}/{NUM_SUCCESSFUL_EPISODES}")
+        print(f"Episode {episode_idx}/{MAX_TOTAL_EPISODES}: SUCCESS! Reward: {ep_reward:.2f}. Total successful collected: {successful_episodes_counter}/{NUM_SUCCESSFUL_EPISODES}")
     else:
-        print(f"Episode {episode_idx}: Failed (Reward: {ep_reward:.2f}). Discarding trajectory.")
+        print(f"Episode {episode_idx}/{MAX_TOTAL_EPISODES}: Failed. (Reward: {ep_reward:.2f}). Discarding trajectory.")
+    
+    # Καθαρισμός μνήμης RAM σε κάθε επανάληψη
+    del ep_images
+    del ep_actions
+    gc.collect()
 
-# Μετατροπή σε numpy arrays
-images = np.array(images, dtype=np.uint8)
-actions = np.array(actions, dtype=np.float32)
+# Έλεγχος αν όντως μαζεύτηκαν δεδομένα πριν την αποθήκευση
+if len(images) > 0:
+    # Μετατροπή σε numpy arrays
+    images = np.array(images, dtype=np.uint8)
+    actions = np.array(actions, dtype=np.float32)
 
-# Αποθήκευση στο δίσκο
-np.savez_compressed(OUTPUT_FILE, states=images, actions=actions)
+    np.savez_compressed(OUTPUT_FILE, states=images, actions=actions)   # Αποθήκευση στο δίσκο
 
-print("\n--- Collection Complete ---")
-print(f"Dataset saved to: {os.path.abspath(OUTPUT_FILE)}")
-print(f"Total Image Frames Stored: {images.shape}")
-print(f"Total Action Vectors Stored: {actions.shape}")
+    print("\n--- Collection Complete ---")
+    print(f"Dataset saved to: {os.path.abspath(OUTPUT_FILE)}")
+    print(f"Total Image Frames Stored: {images.shape}")
+    print(f"Total Action Vectors Stored: {actions.shape}")
+else:
+    print("\n--- Collection Stopped ---")
+    print("No successful episodes were collected in 100 attempts. Dataset was not saved.")
 
 env.close()

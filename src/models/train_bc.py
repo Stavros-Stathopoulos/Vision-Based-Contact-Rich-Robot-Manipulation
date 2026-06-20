@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from bc_policy import BehaviorCloningPolicy
+from .bc_policy import BehaviorCloningPolicy
 
 BATCH_SIZE = 32  # Setting a batch size of 32 for training. This means that the model will process 32 samples at a time before updating the weights. Balance between memory efficiency and gradient estimation stability.
 EPOCHS = 20  # Number of complete passes through the entire training dataset. More epochs can lead to better learning but also risk overfitting if too high.

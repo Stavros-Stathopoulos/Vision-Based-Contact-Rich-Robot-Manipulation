@@ -1,1 +1,1 @@
-from controllers.baseline_controller import HeuristicBaselineController
+from ..controllers.baseline_controller import HeuristicBaselineController

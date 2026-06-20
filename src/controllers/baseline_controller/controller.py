@@ -1,5 +1,5 @@
 import numpy as np
-from base_controller import BaseController
+from ..base_controller import BaseController
 
 class HeuristicBaselineController(BaseController):
     """
@@ -7,7 +7,8 @@ class HeuristicBaselineController(BaseController):
     Acts as a baseline policy and an expert data generator for Imitation Learning.
     """
     def __init__(self, action_dim: int = 7):
-        super().__init__(action_dim=action_dim)
+        super().__init__()
+        self.action_dim = action_dim
         self.step_counter = 0
         
     def reset(self) -> None:
@@ -20,6 +21,7 @@ class HeuristicBaselineController(BaseController):
         Outputs a hardcoded sequence of actions based on the elapsed simulation steps.
         Does NOT use privileged object state coordinates, obeying 'use_object_obs=False'.
         """
+        
         action = np.zeros(self.action_dim)
 
         """
@@ -32,8 +34,7 @@ class HeuristicBaselineController(BaseController):
         1) control_frequency is assumed to be 20Hz, so each step corresponds to 0.05 seconds (20 steps = 1 second).
         2) action[0:3] corresponds to the XYZ position control of the gripper, and action[6] corresponds to the gripper open/close command.
         """
-        
-        
+
         # State 1: Move gripper down towards the nut location area (Steps 0 to 25) --> 1.25 seconds 
         if self.step_counter < 25: 
             action[2] = -0.15  # Move down along Z axis

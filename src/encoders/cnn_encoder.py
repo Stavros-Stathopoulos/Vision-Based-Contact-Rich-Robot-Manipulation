@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from base_encoder import BaseEncoder
+from .base_encoder import BaseEncoder
 
 # Υπολογισμός εξόδου: 
 # Layer 1 (Stride 2): (84 - 5)/2 + 1 = 40 -> (32, 40, 40)
