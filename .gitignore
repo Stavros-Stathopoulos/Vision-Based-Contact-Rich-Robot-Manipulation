@@ -221,3 +221,6 @@ __marimo__/
 .vscode/
 .env
 
+# Dataset and Trained Models
+*.npz
+*.pth
