@@ -3,16 +3,16 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from .bc_policy import BehaviorCloningPolicy
+from .bc_model import BehaviorCloningPolicy
 
 BATCH_SIZE = 32  # Setting a batch size of 32 for training. This means that the model will process 32 samples at a time before updating the weights. Balance between memory efficiency and gradient estimation stability.
 EPOCHS = 20  # Number of complete passes through the entire training dataset. More epochs can lead to better learning but also risk overfitting if too high.
 LEARNING_RATE = 1e-3  # Learning rate for the Adam optimizer. Controls the step size during gradient updates.
-DATASET_PATH = "expert_demonstrations.npz"
-MODEL_SAVE_PATH = "bc_policy.pth"
+DATASET_PATH = "expert_demos.npz"
+MODEL_SAVE_PATH = "bc_model.pth"
 
 def train_bc_model():
-    print("Loading Expert Demonstration Dataset")
+    print("Loading Expert Demonstration Dataset\n")
     if not torch.os.path.exists(DATASET_PATH):
         print(f"Error: {DATASET_PATH} not found. Run collect_demos.py first!")
         return
@@ -33,7 +33,7 @@ def train_bc_model():
 
     # 4. Αρχικοποίηση Network, MSELoss και Optimizer
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Training will run on: {device}")
+    print(f"Training will run on: {device}\n")
     
     model = BehaviorCloningPolicy(action_dim=7).to(device)
     criterion = nn.MSELoss()  # L = Σ||π(s) - a||². It measures the average squared difference between the predicted actions and the expert actions in order to minimize this loss.
