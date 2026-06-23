@@ -50,23 +50,47 @@ $$\min_{\theta} \sum_i \|\pi_{\theta}(s_i) - a_i\|^2$$
 
 ## PART 3: Reinforcement Learning (Autonomous Control)
 
-> **Description:** Το PART 3 εισάγει τον Agent στο πλαίσιο της αυτόνομης Ενισχυτικής Μάθησης (Reinforcement Learning). Εδώ, το ρομπότ σταματά να βασίζεται σε έτοιμα παραδείγματα και μαθαίνει αυτόνομα μέσω δοκιμής και σφάλματος (trial and error) με στόχο τη μεγιστοποίηση των rewards. Λόγω της απουσίας προνομιακών πληροφοριών, η πολιτική εκπαιδεύεται end-to-end να επεξεργάζεται raw pixels και να εξάγει δράσεις ελέγχου.
+> **Description:** Το PART 3 υλοποιεί τη μετάβαση από την επιβλεπόμενη μίμηση στην αυτόνομη εξερεύνηση, τη διαχείριση πόρων και τη βελτιστοποίηση της πολιτικής ελέγχου σε συνεχή χώρο δράσεων (Continuous Action Space) για το task του Nut Assembly.
 
-### Part3_1 : Setup RL Environment & Wrapper
+### Task 3.1: Setup RL Environment & Wrapper
 * **Λειτουργία:** Μετατροπή του περιβάλλοντος του robosuite ώστε να είναι πλήρως συμβατό με το standard **Gym/Gymnasium API** που απαιτούν οι σύγχρονες βιβλιοθήκες (Stable-Baselines3). 
 * **Χαρακτηριστικά Υλοποίησης:**
-  1. **Observation Refactoring:** Απομονώνεται μόνο η εικόνα `agentview_image` και πετιέται η προνομιακή πληροφορία.
-  2. **Axis Transposition:** Μετατροπή του frame από μορφή MuJoCo ($84 \times 84 \times 3$) σε μορφή PyTorch ($3 \times 84 \times 84$) live σε κάθε βήμα.
-  3. **Action Space Mapping:** Περιορισμός των 7 συνεχών δράσεων αυστηρά στο διάστημα $[-1.0, 1.0]$.
-  4. **Gym API Compliance:** Η `step()` και η `reset()` επιστρέφουν πλέον την τυποποιημένη πεντάδα: `(obs, reward, terminated, truncated, info)`.
+  1. **Observation Refactoring:** Απομονώνεται μόνο η εικόνα `agentview_image` (διάστασης $84 \times 84 \times 3$) από την εικονική off-screen κάμερα και πετιέται η προνομιακή πληροφορία.
+  2. **Axis Transposition:** Μετατροπή του frame από μορφή MuJoCo (`H, W, C`) σε μορφή PyTorch (`C, H, W`) live σε κάθε βήμα.
+  3. **Action Space Mapping:** Περιορισμός και κανονικοποίηση των 7 συνεχών δράσεων αυστηρά στο διάστημα $[-1.0, 1.0]$.
 * **Έλεγχος:** Το script `test_wrapper.py` επιβεβαίωσε την ορθότητα των spaces και των shapes (`uint8` array διάστασης `(3, 84, 84)`).
 
-### Part3_2 : Train RL-Agent(Resource-Constrained Pipeline)
-* **Το Πρόβλημα Μνήμης:** Λόγω low-level memory leak της MuJoCo κατά τη συνεχή ανανέωση των off-screen εικόνων rendering, η μνήμη RAM του συστήματος υπερφορτωνόταν και ο κώδικας κράσαρε μετά από περίπου 3.000 συνεχή βήματα (timesteps), καθιστώντας αδύνατη την κλασική εκπαίδευση.
-* **Στρατηγική Επίλυσης (Iterative Block Training):** Ο κώδικας αναδιαμορφώθηκε ριζικά ώστε να εκτελείται σε **ελεγχόμενα Blocks των 2.000 timesteps** με τη χρήση του **Hard Environment Purge**:
-  1. **Συνέχεια Εκπαίδευσης:** Με την παράμετρο `reset_num_timesteps=False` της Stable-Baselines3, το global step και οι καταστάσεις των Adam optimizers διατηρούνται αναλλοίωτες από Block σε Block.
-  2. **Hard Reset & Purge:** Στο τέλος κάθε 2.000 βημάτων, το περιβάλλον κλείνει οριστικά (`env.close()`), εξαναγκάζοντας το λειτουργικό σύστημα να καταστρέψει τα low-level C++ αντικείμενα. Αμέσως μετά, ενεργοποιείται ο Garbage Collector της Python και γίνεται live απελευθέρωση μνήμης σε επίπεδο C-libraries:
+### Task 3.2: Train RL-Agent (Recovery Logic for Contact-Rich Failures)
+* **Λειτουργία:** Εκπαίδευση αυτόνομου Agent με τον αλγόριθμο **SAC (Soft Actor-Critic)** χρησιμοποιώντας `CnnPolicy` για την end-to-end επεξεργασία των εικόνων και `reward_shaping=True` για την καθοδήγηση του ρομπότ.
+* **CRITICAL HARDWARE ISSUE & RECOVERY LOGIC:**
+  Λόγω έλλειψης αποκλειστικής κάρτας γραφικών (GPU) και low-level memory leak της MuJoCo κατά το off-screen rendering των καμερών, η RAM υπερφορτωνόταν και ο κώδικας κράσαρε με `Could not allocate memory` περίπου στα 3.100 timesteps. Σχεδιάστηκε ένας εξελιγμένος μηχανισμός ανάκτησης πόρων (**Iterative Block Training - IBT**):
+  1. **Block Allocation:** Η εκπαίδευση σπάει σε ελεγχόμενα Blocks των **2.000 timesteps** (`STEPS_PER_BLOCK = 2000`) με `reset_num_timesteps=False` για τη διατήρηση των global steps και των Adam optimizers.
+  2. **Hard Environment Purge:** Στο τέλος κάθε Block, εκτελείται `env.close()` για την καταστροφή των low-level C++ rendering buffers, γίνεται χειροκίνητο `gc.collect()`, και εξαναγκάζεται εκκαθάριση της heap μνήμης μέσω C-bindings: `ctypes.CDLL(None).malloc_trim(0)`.
+  3. **Memory Optimization:** Ενεργοποιήθηκε η παράμετρος `optimize_memory_usage=True` στον SAC, η οποία δημιουργεί δυναμικά τις επόμενες καταστάσεις, μειώνοντας την κατανάλωση RAM του Replay Buffer κατά 50%.
+  4. **Parallelization:** Ορίστηκε `torch.set_num_threads(os.cpu_count())` για πλήρη παράλληλη επεξεργασία πινάκων στην CPU.
 
-  ### Task 3.3: Apply Domain Randomization for Robustness (Nominal & Full Run Execution)
-* **Υλοποίηση & Proof of Concept (PoC):** Για την επαλήθευση της σταθερότητας του pipeline, εκτελέστηκε ένα Nominal Run **10.000 timesteps** (χωρισμένο σε 5 Blocks των 2.000 βημάτων). Τα αποτελέσματα έδειξαν υποδειγματική μαθηματική σύγκλιση (πτώση του `ent_coef` από 0.914 σε 0.0526), επιβεβαιώνοντας ότι ο Agent μεταβαίνει σωστά από το exploration στο exploitation, ενώ το Replay Buffer διατηρήθηκε σταθερό.
-* **Στρατηγική Robustness (Full Run):** Επειδή τα contact-rich tasks απαιτούν εκτενή έκθεση σε διαφορετικές αρχικές θέσεις του παξιμαδιού (Domain Randomization), η εκπαίδευση των 10k steps αποτελεί τη βάση (checkpoint). Για την πλήρη ολοκλήρωση της στιβαρότητας του Agent, το pipeline είναι έτοιμο να εκτελέσει το **Full Run των 50.000+ timesteps** (συνεχίζοντας από το παραχθέν `sac_nut_assembly.zip`), το οποίο θα προσφέρει στον CNN Encoder τον απαραίτητο όγκο οπτικών δεδομένων για να γενικεύει σε κάθε περιβάλλον.
+### Task 3.3: Apply Domain Randomization for Robustness
+* **Υλοποίηση & Proof of Concept (PoC):** Για την επαλήθευση της σταθερότητας του pipeline, εκτελέστηκε ένα Nominal Run **10.000 timesteps** (5 Blocks των 2.000 βημάτων). Τα αποτελέσματα έδειξαν υποδειγματική μαθηματική σύγκλιση:
+  * **Entropy Tuning (`ent_coef`):** Μειώθηκε ομαλά από το `0.914` στο **`0.0526`**, επιβεβαιώνοντας ότι ο Agent απέκτησε σιγουριά, περνώντας από το exploration στο exploitation.
+  * **Actor Loss:** Μειώθηκε σταθερά από το `-10.8` στο **`-29.4`**, δείχνοντας ότι ο Actor έμαθε να παράγει τροχιές με υψηλότερα Q-values.
+  * **Reward (`ep_rew_mean`):** Σταθεροποιήθηκε στο **`0.24 - 0.28`**, αποδεικνύοντας ότι ο Agent έμαθε να οδηγεί σταθερά τον Panda gripper πολύ κοντά στο παξιμάδι.
+* **Στρατηγική Robustness (Full Production Run):** Επειδή τα contact-rich tasks απαιτούν εκτενή έκθεση σε διαφορετικές αρχικές θέσεις του παξιμαδιού (Domain Randomization), το pipeline είναι 100% έτοιμο να εκτελέσει το **Full Run των 20.000 - 50.000+ timesteps** συνεχίζοντας από το παραχθέν checkpoint, ώστε ο Agent να αναπτύξει τη στιβαρότητα που απαιτείται για το τελικό insertion.
+
+* **Artifact Serialization:** Το μοντέλο αποθηκεύτηκε επιτυχώς ως `sac_nut_assembly.zip` περιλαμβάνοντας τα βάρη των δικτύων (`policy.pth`) και τις πλήρεις καταστάσεις των optimizers για απρόσκοπτη μελλοντική συνέχιση.
+
+### Task 3.4: Make Diagramms & Simulation to Test the RL-Agent
+* **Λειτουργία:** Υλοποίηση του script `src/models/test_rl.py`. Φορτώνει το εκπαιδευμένο μοντέλο, παρακάμπτει το interactive backend του matplotlib χρησιμοποιώντας `matplotlib.use('Agg')` για την αποφυγή σφαλμάτων του `tkinter` στα Windows, εκτελεί deterministic επεισόδια και παράγει αυτόματα διαγράμματα.
+* **Αξιοποίηση στο Project:** Παράγει το διάγραμμα `rl_logs/evaluation_live_plot.png` αποτυπώνοντας τα rewards ανά επεισόδιο, επιβεβαιώνοντας ποσοτικά και ποιοτικά τη λειτουργικότητα του pipeline.
+
+---
+
+## PART 4: Evaluation & Deployment
+
+> **Description:** Το PART 4 αφορά την ποιοτική και ποσοτική αξιολόγηση της εκπαιδευμένης πολιτικής. Μέσα από αυτοματοποιημένα scripts, μετατρέπουμε τα binary αρχεία των βαρών σε διαγράμματα σύγκλισης και βίντεο προσομοίωσης, εξασφαλίζοντας τον πλήρη έλεγχο της συμπεριφοράς του ρομπότ.
+
+### Part4_1 : Create Evaluation and Logging Scripts
+* **Λειτουργία:** Μέσω του `test_rl.py` (με ενεργοποιημένο το `has_renderer=True`), ανοίγει live το 3D graphical παράθυρο της MuJoCo στα Windows. Επιτρέπει την οπτική επιβεβαίωση της κίνησης του Panda, αποδεικνύοντας ότι ο βραχίονας κατευθύνεται με ακρίβεια προς το αντικείμενο βασιζόμενος μόνο στην όραση.
+
+### Part4_2 : Record and Edit Demo Video
+* **Λειτουργία:** Υλοποίηση του script `src/models/evaluate_and_record.py`. Χρησιμοποιεί τον off-screen renderer της MuJoCo για να καταγράψει off-screen τα frames υψηλής ανάλυσης της κάμερας `agentview` και να συνθέσει αυτόματα ένα αρχείο βίντεο `evaluation_simulation.mp4`.
+* **Αξιοποίηση στο Project:** Αποτελεί το τελικό παραδοτέο βίντεο της εργασίας, αναδεικνύοντας τις nominal επιτυχίες προσέγγισης, καθώς και τη συμπεριφορά του Agent κατά τις force interactions.
