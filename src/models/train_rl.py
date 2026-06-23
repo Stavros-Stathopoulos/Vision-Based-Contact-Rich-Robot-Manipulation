@@ -10,10 +10,12 @@ from stable_baselines3.common.monitor import Monitor
 from src.environments.gym_wrapper import RobosuiteGymWrapper
 
 # Υπερπαράμετροι
-TOTAL_TIMESTEPS = 50000  # Συνολικός αριθμός βημάτων εκπαίδευσης
+TOTAL_TIMESTEPS = 20000  # Συνολικός αριθμός βημάτων εκπαίδευσης
 STEPS_PER_BLOCK = 2000  # Κλείσιμο και άνοιγμα του env ανά 2.000 steps για μηδενισμό του leak
 LOG_DIR = "./rl_logs"  # Κατάλογος για τα logs του Stable Baselines3 (προαιρετικό, αλλά χρήσιμο για παρακολούθηση)
 MODEL_SAVE_PATH = "SAC"  # Αποθήκευση του εκπαιδευμένου μοντέλου
+
+torch.set_num_threads(os.cpu_count())
 
 def clean_memory():
     """Καθολικός καθαρισμός μνήμης Python και C-libraries."""
@@ -50,10 +52,10 @@ def create_env():
 def train_rl_agent():
     os.makedirs(LOG_DIR, exist_ok=True)
     
-    # 1. Δημιουργία του πρώτου περιβάλλοντος
+    # 1. Αρχικοποίηση του πρώτου environment
     env = create_env()
     
-    print("\nRL Train: Configuring SAC Agent with CNN Policy\n")
+    print("RL Train: Configuring SAC Agent with CNN Policy\n")
     model = SAC(
         "CnnPolicy",  # CNN policy για επεξεργασία εικόνων
         env,   # Το περιβάλλον που δημιουργήθηκε με το Gym Wrapper
@@ -64,34 +66,32 @@ def train_rl_agent():
         device="cuda" if torch.cuda.is_available() else "cpu"  # Χρήση GPU αν είναι διαθέσιμη
     )
     
-    # 2. Τμηματική εκπαίδευση (Iterative Training Loop)
     trained_steps = 0
     block_count = 1
     
-    print(f"Starting Iterative SAC Training for {TOTAL_TIMESTEPS} timesteps")
+    print(f"Starting Iterative SAC Training for {TOTAL_TIMESTEPS} timesteps\n")
     
+    # 2. Το Loop των Blocks (ανά 2.000 βήματα)
     while trained_steps < TOTAL_TIMESTEPS:
-        print(f"\nStarting Block {block_count} ({trained_steps} / {TOTAL_TIMESTEPS} timesteps)")
+        print(f"Starting Block {block_count} ({trained_steps} -> {trained_steps + STEPS_PER_BLOCK} timesteps)\n")
         
-        # Εκπαίδευση για ένα μικρό block βημάτων
+        # Εκπαίδευση για το τρέχον block. Το reset_num_timesteps=False κρατάει το global step σταθερό.
         model.learn(total_timesteps=STEPS_PER_BLOCK, reset_num_timesteps=False, progress_bar=True)
         trained_steps += STEPS_PER_BLOCK
         block_count += 1
         
-        # Σημαντικό: Καταστροφή του τρέχοντος περιβάλλοντος για πλήρη απελευθέρωση της MuJoCo
-        print("Hard resetting environment and purging MuJoCo memory buffers...")
+#       3. Σκληρό reset της MuJoCo μνήμης 
+        print("Hard resetting environment and purging MuJoCo memory buffers\n")
         env.close()
-        
-        # Καθαρισμός μνήμης
         clean_memory()
         
-        # Δημιουργία ολοκαίνουργιου instance περιβάλλοντος
+        # 4. Δημιουργία νέου περιβάλλοντος και σύνδεση με το υπάρχον μοντέλο
         env = create_env()
         model.set_env(env)  # Σύνδεση του Agent με το νέο καθαρό περιβάλλον
         
-    # 3. Αποθήκευση μοντέλου
+    # 5. Αποθήκευση μοντέλου
     model.save(MODEL_SAVE_PATH)
-    print(f"\nSuccess! RL Policy saved to {MODEL_SAVE_PATH}.zip")
+    print(f"Success! RL Policy saved to {MODEL_SAVE_PATH}.zip")
     env.close()
 
 if __name__ == "__main__":
