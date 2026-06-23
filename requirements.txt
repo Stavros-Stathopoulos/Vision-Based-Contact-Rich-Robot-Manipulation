@@ -1,5 +1,22 @@
-robosuite
-torch
+# --- Core Simulation & Physics ---
+mujoco==3.1.4
+robosuite==1.4.1
+
+# --- Deep Learning Framework ---
+torch==2.2.1
+torchvision==0.17.1
+
+# --- Reinforcement Learning & Environments ---
+gymnasium==0.29.1
+stable-baselines3[extra]==2.3.0
+
+# --- Data Processing & Math ---
 numpy==1.26.4
-gymnasium
-stable-baselines3[extra]
+pandas==2.2.1
+scipy==1.12.0
+
+# --- Visualization & Logging ---
+matplotlib==3.8.3
+imageio==2.34.0
+imageio-ffmpeg==0.4.9
+psutil==5.9.8

@@ -224,3 +224,6 @@ __marimo__/
 # Dataset and Trained Models
 *.npz
 *.pth
+*.csv
+*.log
+*SAC.zip
