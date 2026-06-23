@@ -1,0 +1,133 @@
+# Vision-Based Contact-Rich Robot Manipulation (Franka Emika Panda)
+
+Το project αυτό πραγματεύεται την ανάπτυξη μιας έξυπνης πολιτικής ελέγχου βασισμένης αποκλειστικά στην όραση (Vision-Based Control) για έναν ρομποτικό βραχίονα Panda 7 βαθμών ελευθερίας. Στόχος του ρομπότ είναι να εντοπίζει ένα παξιμάδι (Nut) από τα pixels μιας εικονικής κάμερας και να το τοποθετεί αυτόνομα σε έναν πείρο (Peg) μέσα στο περιβάλλον προσομοίωσης MuJoCo.
+
+---
+
+## 📂 Δομή του Repository
+
+```text
+├── src/
+│   ├── controllers/
+│   │   ├── base_controller.py       # Abstract κλάση για τους controllers
+│   │   └── baseline_controller/     # Heuristic Expert (Finite State Machine)
+│   ├── encoders/
+│   │   ├── cnn_encoder.py           # Custom NatureCNN Feature Extractor
+│   │   └── preprocessing.py         # Κανονικοποίηση και επεξεργασία εικόνας
+│   ├── environments/
+│   │   ├── gym_wrapper.py           # Μετατροπέας robosuite σε Gymnasium API
+│   │   └── test_wrapper.py          # Script δοκιμής του wrapper
+│   └── models/
+│       ├── train_bc.py              # Εκπαίδευση Behavior Cloning (Imitation)
+│       ├── evaluate_bc.py           # Αξιολόγηση του Behavior Cloning μοντέλου
+│       ├── train_rl.py              # Εκπαίδευση αυτόνομου SAC Agent (με IBT)
+│       └── test_rl.py               # Live 3D Simulation & Plotting του RL Agent
+├── rl_logs/                         # Αρχεία καταγραφής και διαγράμματα (Plots)
+├── requirements.txt                 # Εξαρτήσεις και βιβλιοθήκες λογισμικού
+├── DEVELOPMENT.md                   # Αναλυτικό ημερολόγιο αλλαγών & υλοποίησης
+├── instructions.md                  # Οδηγίες εγκατάστασης και εκτέλεσης
+└── README.md                        # Εκφώνηση Project
+```
+
+Οδηγίες Εγκατάστασης
+Επιλέξτε τις οδηγίες ανάλογα με το λειτουργικό σύστημα του υπολογιστή σας:
+
+🪟 Επιλογή Α: Εγκατάσταση σε Windows (PowerShell)
+
+Κλωνοποίηση του Repository:
+
+```PowerShell
+git clone [https://github.com/Stavros-Stathopoulos/Vision-Based-Contact-Rich-Robot-Manipulation.git](https://github.com/Stavros-Stathopoulos/Vision-Based-Contact-Rich-Robot-Manipulation.git)
+cd Vision-Based-Contact-Rich-Robot-Manipulation
+```
+
+Δημιουργία & Ενεργοποίηση Virtual Environment:
+
+```PowerShell
+python -m venv ic_env
+.\ic_env\Scripts\Activate.ps1
+```
+
+Εγκατάσταση των Βιβλιοθηκών:
+
+```PowerShell
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Επιλογή Β: Εγκατάσταση σε Linux (Ubuntu / Debian)
+
+Εγκατάσταση Απαραίτητων System Dependencies:
+Η MuJoCo και το robosuite απαιτούν ορισμένες low-level βιβλιοθήκες συστήματος για το rendering (GL/GLU). Εκτελέστε στο τερματικό:
+
+```Bash
+sudo apt-get update
+sudo apt-get install -y libgl1-mesa-dev libglib2.0-0 libosmesa6-dev patchelf python3-pip python3-venv
+```
+
+Κλωνοποίηση του Repository:
+
+```Bash
+git clone [https://github.com/Stavros-Stathopoulos/Vision-Based-Contact-Rich-Robot-Manipulation.git](https://github.com/Stavros-Stathopoulos/Vision-Based-Contact-Rich-Robot-Manipulation.git)
+cd Vision-Based-Contact-Rich-Robot-Manipulation
+```
+
+Δημιουργία & Ενεργοποίηση Virtual Environment:
+
+```Bash
+python3 -m venv ic_env
+source ic_env/bin/activate
+```
+
+Εγκατάσταση των Βιβλιοθηκών:
+
+```Bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Οδηγίες Εκτέλεσης του Λογισμικού
+
+Όλες οι εντολές πρέπει να εκτελούνται από τον κεντρικό φάκελο του project έχοντας ενεργοποιημένο το ic_env!
+
+🟢 Έλεγχος Υποδομής & Wrapper (Milestone 1 & 3.1)
+
+Για να επιβεβαιώσετε ότι ο wrapper μετατρέπει σωστά τις εικόνες και τις δράσεις σε Gymnasium format, τρέξτε:
+
+```Bash
+python -m src.environments.test_wrapper
+```
+
+🔵 Μίμηση Συμπεριφοράς / Imitation Learning (Milestone 2)
+
+Συλλογή Δεδομένων (Expert Demos): Τρέξτε τον προγραμματισμένο FSM controller για να αποθηκεύσετε επιτυχείς τροχιές στο expert_demos.npz:
+
+```Bash
+python -m src.demos.collect_demos
+```
+
+Εκπαίδευση Μοντέλου BC: Εκπαιδεύστε το νευρωνικό δίκτυο να μιμείται τις κινήσεις κοιτώντας μόνο pixels:
+
+```Bash
+python -m src.models.train_bc
+```
+
+Αξιολόγηση BC: Δείτε τον εκπαιδευμένο Agent να κινείται βάσει της μίμησης:
+
+```Bash
+python -m src.models.evaluate_bc
+```
+
+🟡 Αυτόνομη Ενισχυτική Μάθηση / Soft Actor-Critic (Milestone 3)
+
+Έναρξη/Συνέχιση Εκπαίδευσης: Εκτελέστε την αυτόνομη εκπαίδευση με ενσωματωμένο Reward Shaping και το σύστημα Iterative Block Training (IBT) για την προστασία της RAM:
+
+```Bash
+python -m src.models.train_rl
+```
+
+Live 3D Simulation & Παραγωγή Διαγραμμάτων: Μόλις ολοκληρωθεί η εκπαίδευση και παραχθεί το αρχείο sac_nut_assembly.zip, εκτελέστε το παρακάτω script. Θα ανοίξει ένα live 3D παράθυρο της MuJoCo στην οθόνη σας (στα Windows ή σε Linux με GUI) και θα αποθηκεύσει το γράφημα απόδοσης στο rl_logs/evaluation_live_plot.png:
+
+```Bash
+python -m src.models.test_rl
+```

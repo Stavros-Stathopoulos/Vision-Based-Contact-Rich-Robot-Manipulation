@@ -10,10 +10,10 @@ from stable_baselines3.common.monitor import Monitor
 from src.environments.gym_wrapper import RobosuiteGymWrapper
 
 # Υπερπαράμετροι
-TOTAL_TIMESTEPS = 20000  # Συνολικός αριθμός βημάτων εκπαίδευσης
+TOTAL_TIMESTEPS = 50000  # Συνολικός αριθμός βημάτων εκπαίδευσης
 STEPS_PER_BLOCK = 2000  # Κλείσιμο και άνοιγμα του env ανά 2.000 steps για μηδενισμό του leak
 LOG_DIR = "./rl_logs"  # Κατάλογος για τα logs του Stable Baselines3 (προαιρετικό, αλλά χρήσιμο για παρακολούθηση)
-MODEL_SAVE_PATH = "SAC"  # Αποθήκευση του εκπαιδευμένου μοντέλου
+MODEL_SAVE_PATH = "SAC_50k"  # Αποθήκευση του εκπαιδευμένου μοντέλου
 
 torch.set_num_threads(os.cpu_count())
 
