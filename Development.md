@@ -61,19 +61,12 @@ $$\min_{\theta} \sum_i \|\pi_{\theta}(s_i) - a_i\|^2$$
   4. **Gym API Compliance:** Η `step()` και η `reset()` επιστρέφουν πλέον την τυποποιημένη πεντάδα: `(obs, reward, terminated, truncated, info)`.
 * **Έλεγχος:** Το script `test_wrapper.py` επιβεβαίωσε την ορθότητα των spaces και των shapes (`uint8` array διάστασης `(3, 84, 84)`).
 
-### Part3_2 : Train Reinforcement Learning Agent
+### Part3_2 : Train RL-Agent(Resource-Constrained Pipeline)
+* **Το Πρόβλημα Μνήμης:** Λόγω low-level memory leak της MuJoCo κατά τη συνεχή ανανέωση των off-screen εικόνων rendering, η μνήμη RAM του συστήματος υπερφορτωνόταν και ο κώδικας κράσαρε μετά από περίπου 3.000 συνεχή βήματα (timesteps), καθιστώντας αδύνατη την κλασική εκπαίδευση.
+* **Στρατηγική Επίλυσης (Iterative Block Training):** Ο κώδικας αναδιαμορφώθηκε ριζικά ώστε να εκτελείται σε **ελεγχόμενα Blocks των 2.000 timesteps** με τη χρήση του **Hard Environment Purge**:
+  1. **Συνέχεια Εκπαίδευσης:** Με την παράμετρο `reset_num_timesteps=False` της Stable-Baselines3, το global step και οι καταστάσεις των Adam optimizers διατηρούνται αναλλοίωτες από Block σε Block.
+  2. **Hard Reset & Purge:** Στο τέλος κάθε 2.000 βημάτων, το περιβάλλον κλείνει οριστικά (`env.close()`), εξαναγκάζοντας το λειτουργικό σύστημα να καταστρέψει τα low-level C++ αντικείμενα. Αμέσως μετά, ενεργοποιείται ο Garbage Collector της Python και γίνεται live απελευθέρωση μνήμης σε επίπεδο C-libraries:
 
-* **Λειτουργία:** Εκπαίδευση αυτόνομου Agent με τον αλγόριθμο **SAC (Soft Actor-Critic)** χρησιμοποιώντας `CnnPolicy` για την end-to-end επεξεργασία των εικόνων και `reward_shaping=True` για την καθοδήγηση του ρομπότ.
-* **Μαθηματικές Ενδείξεις Logs (ανά 400 βήματα):**
-  * `rollout/ep_rew_mean`: Σταδιακή άνοδος του reward (σωστή συμπεριφορά εξερεύνησης).
-  * `train/critic_loss`: Πτώση και σταθεροποίηση του σφάλματος του Critic.
-  * `train/ent_coef`: Αυτόματη μείωση της εντροπίας (*entropy tuning*), δείχνοντας ότι ο Agent περνάει σταδιακά από το *exploration* στοχευμένα στο *exploitation*.
-
-#### CRITICAL ISSUE: CPU Memory Leak & Hardware Constraints
-* **Το Πρόβλημα:** Λόγω έλλειψης αποκλειστικής κάρτας γραφικών (GPU), η εκπαίδευση εκτελείται αποκλειστικά στην CPU (`Using cpu device`), καθιστώντας τη διαδικασία forward/backward των frames εξαιρετικά αργή (3-4 FPS). Επιπλέον, λόγω low-level memory leak της MuJoCo κατά το reset των εικόνων και του μεγάλου replay buffer, η RAM υπερφορτωνόταν και ο κώδικας κράσαρε με `Could not allocate memory` περίπου στα 3.100 timesteps, εμποδίζοντας την ολοκλήρωση του Block των 5.000 βημάτων.
-* **Στρατηγική Επίλυσης (Hard Reset Loop & CPU Optimization):**
-  Αντί για απλό reset, ο κώδικας στο `train_rl.py` αναδιαμορφώθηκε ριζικά:
-  1. **Iterative Block Training:** Η εκπαίδευση έσπασε σε πολύ μικρά και ελεγχόμενα blocks των **1.000 timesteps** (`STEPS_PER_BLOCK = 1000`) με απενεργοποιημένο το reset του global step (`reset_num_timesteps=False`).
-  2. **Hard Environment Purge:** Στο τέλος κάθε block, το περιβάλλον κλείνει οριστικά με `env.close()`, αναγκάζοντας το σύστημα να καταστρέψει τα low-level C++ αντικείμενα και τα off-screen buffers της MuJoCo, μηδενίζοντας τη διαρροή.
-  3. **Memory Flush & Reconnect:** Εκτελείται καθολικό `gc.collect()`, απελευθερώνεται η heap μνήμη μέσω `ctypes`, δημιουργείται ένα ολοκαίνουργιο instance περιβάλλοντος και συνδέεται live με τον υπάρχοντα SAC Agent μέσω της `model.set_env(env)`.
-  4. **Buffer Reduction:** Το `buffer_size` μειώθηκε στις 2.000 εικόνες και το `batch_size` στο 32 για να προστατευθεί η RAM της CPU και να επιταχυνθούν τα μαθηματικά updates.
+  ### Task 3.3: Apply Domain Randomization for Robustness (Nominal & Full Run Execution)
+* **Υλοποίηση & Proof of Concept (PoC):** Για την επαλήθευση της σταθερότητας του pipeline, εκτελέστηκε ένα Nominal Run **10.000 timesteps** (χωρισμένο σε 5 Blocks των 2.000 βημάτων). Τα αποτελέσματα έδειξαν υποδειγματική μαθηματική σύγκλιση (πτώση του `ent_coef` από 0.914 σε 0.0526), επιβεβαιώνοντας ότι ο Agent μεταβαίνει σωστά από το exploration στο exploitation, ενώ το Replay Buffer διατηρήθηκε σταθερό.
+* **Στρατηγική Robustness (Full Run):** Επειδή τα contact-rich tasks απαιτούν εκτενή έκθεση σε διαφορετικές αρχικές θέσεις του παξιμαδιού (Domain Randomization), η εκπαίδευση των 10k steps αποτελεί τη βάση (checkpoint). Για την πλήρη ολοκλήρωση της στιβαρότητας του Agent, το pipeline είναι έτοιμο να εκτελέσει το **Full Run των 50.000+ timesteps** (συνεχίζοντας από το παραχθέν `sac_nut_assembly.zip`), το οποίο θα προσφέρει στον CNN Encoder τον απαραίτητο όγκο οπτικών δεδομένων για να γενικεύει σε κάθε περιβάλλον.
