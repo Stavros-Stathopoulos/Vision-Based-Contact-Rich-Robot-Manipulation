@@ -10,9 +10,10 @@ from .base_encoder import BaseEncoder
 _CONV_OUT_DIM = 64 * 17 * 17  # 18,496 features
 
 class CNNEncoder(BaseEncoder):
-    def __init__(self, embedding_dim: int = 256):
+    def __init__(self, observation_space=None, embedding_dim: int = 256):
         super().__init__()
         self._embedding_dim = embedding_dim
+        self.features_dim = embedding_dim
 
         # Χρησιμοποιούμε μικρότερα kernels και strides για να μην χάσουμε την πληροφορία των contact-rich λεπτομερειών (παξιμάδι/βίδα)
         self.conv_layers = nn.Sequential(
