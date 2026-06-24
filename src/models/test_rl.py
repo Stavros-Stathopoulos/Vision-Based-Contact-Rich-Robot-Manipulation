@@ -1,26 +1,25 @@
 import os
 import numpy as np
-import pandas as pd
 import matplotlib
-matplotlib.use('Qt5Agg')
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
 from stable_baselines3 import SAC
 from src.environments.gym_wrapper import RobosuiteGymWrapper
 
-def test_rl_agent(model_path="SAC.zip", num_episodes=5):
+
+def test_rl_agent(model_path="SAC_10k.zip", num_episodes=5):
     controller_config = load_composite_controller_config(controller="BASIC")
-    
-    print("Αρχικοποίηση περιβάλλοντος MuJoCo με LIVE Rendering\n")
-    # Ενεργοποιούμε το has_renderer=True για να ανοίξει το παράθυρο στα Windows σου
+
+    print("Initializing MuJoCo environment with LIVE Rendering\n")
     raw_env = suite.make(
         env_name="NutAssembly",
         robots="Panda",
         gripper_types="PandaGripper",
         controller_configs=controller_config,
-        has_renderer=True,             # <--- ΑΝΟΙΓΕΙ ΤΟ ΠΑΡΑΘΥΡΟ ΣΤΑ WINDOWS
-        has_offscreen_renderer=True,   # <--- ΕΠΙΤΡΕΠΕΙ ΣΤΗΝ ΚΑΜΕΡΑ ΝΑ ΒΛΕΠΕΙ
+        has_renderer=True,
+        has_offscreen_renderer=True,
         use_camera_obs=True,
         use_object_obs=False,
         camera_names="agentview",
@@ -28,52 +27,56 @@ def test_rl_agent(model_path="SAC.zip", num_episodes=5):
         camera_widths=84,
         control_freq=20,
         horizon=500,
+        reward_shaping=True,
     )
-    
+
     env = RobosuiteGymWrapper(raw_env)
-    
+
     if not os.path.exists(model_path):
-        print(f"Δεν βρέθηκε το αρχείο μοντέλου: {model_path}.\n")
+        print(f"Model file not found: {model_path}.")
+        env.close()
         return
-        
-    print(f"Φόρτωση του εκπαιδευμένου SAC Agent από: {model_path}\n")
+
+    print(f"Loading trained SAC Agent from: {model_path}\n")
     model = SAC.load(model_path, env=env)
-    
+
     episode_rewards = []
-    
+
     for episode in range(num_episodes):
         obs, _ = env.reset()
         done = False
         ep_reward = 0
-        print(f"Έναρξη Episode {episode + 1} στην οθόνη\n")
-        
+        print(f"Starting Episode {episode + 1}\n")
+
         while not done:
-            # deterministic=True για να δούμε τι ακριβώς έμαθε ο Agent στα 10k steps
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, _ = env.step(action)
             ep_reward += reward
             done = terminated or truncated
-            
-            # Σχεδιάζει live το animation στο παράθυρο των Windows
-            raw_env.render() 
-            
+            raw_env.render()
+
         print(f"Episode {episode + 1} Finished. Total Reward: {ep_reward:.4f}\n")
         episode_rewards.append(ep_reward)
-        
+
     env.close()
-    
-    # --- ΣΧΕΔΙΑΣΗ ΔΙΑΓΡΑΜΜΑΤΟΣ ΑΠΕΥΘΕΙΑΣ ΑΠΟ ΤΑ LIVE REWARDS ---
-    print("\nΠαραγωγή διαγράμματος\n")
+
+    print("\nGenerating evaluation plot\n")
     plt.figure(figsize=(8, 4))
-    plt.bar([f"Ep {i+1}" for i in range(num_episodes)], episode_rewards, color='teal', alpha=0.8)
-    plt.title("Evaluation Rewards per Episode (SAC 10k Steps Checkpoint)")
+    plt.bar(
+        [f"Ep {i+1}" for i in range(num_episodes)],
+        episode_rewards,
+        color="teal",
+        alpha=0.8,
+    )
+    plt.title(f"Evaluation Rewards per Episode (SAC {len(episode_rewards)} eps)")
     plt.xlabel("Episodes")
     plt.ylabel("Total Reward")
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+
     os.makedirs("./rl_logs", exist_ok=True)
     plt.savefig("./rl_logs/evaluation_live_plot.png")
-    print("Το διάγραμμα αποθηκεύτηκε επιτυχώς στο: ./rl_logs/evaluation_live_plot.png\n")
+    print("Plot saved to: ./rl_logs/evaluation_live_plot.png\n")
+
 
 if __name__ == "__main__":
     test_rl_agent()

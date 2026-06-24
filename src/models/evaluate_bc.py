@@ -4,9 +4,9 @@ import numpy as np
 import torch
 import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
-from .bc_model import BehaviorCloningPolicy 
+from src.models.bc_model import BehaviorCloningPolicy
 
-def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
+def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=500):
     """
     Live αξιολόγηση της εκπαιδευμένης Behavior Cloning πολιτικής στο περιβάλλον NutAssembly.
     """
@@ -35,6 +35,7 @@ def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
         camera_widths=84,
         control_freq=20,
         horizon=max_steps,
+        reward_shaping=True,
     )
     
     success_count = 0
@@ -83,4 +84,4 @@ def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
 
 if __name__ == "__main__":
     # Αυτό εκτελείται ΜΟΝΟ αν τρέξεις το αρχείο απευθείας από το terminal
-    evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50)
+    evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=500)

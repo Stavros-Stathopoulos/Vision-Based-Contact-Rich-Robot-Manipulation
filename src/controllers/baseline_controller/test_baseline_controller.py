@@ -15,12 +15,13 @@ env = suite.make(
     has_renderer=False,
     has_offscreen_renderer=True,
     use_camera_obs=True,
-    use_object_obs=False,  # Privileged information is disabled!
+    use_object_obs=True,
     camera_names="agentview",
     camera_heights=84,
     camera_widths=84,
-    control_freq=20,  # Control frequency in Hz (20Hz means each step is 0.05 seconds)
-    horizon=100,  # Shortened horizon for quick evaluation
+    control_freq=20,
+    horizon=500,
+    reward_shaping=True,
 )
 
 # Initialize Controller and Environment
@@ -34,7 +35,7 @@ step = 0
 
 print("🏃 Running evaluation episode...")
 
-while not done and step < 100:
+while not done and step < 500:
     # 1. Get action from our baseline policy -> a = pi(s)
     action = controller.act(obs)
     
