@@ -28,7 +28,7 @@ def create_env():
         camera_heights=84,
         camera_widths=84,
         control_freq=20,
-        horizon=500,
+        horizon=200,
         reward_shaping=True,
         placement_initializer=None
     )
