@@ -158,6 +158,7 @@ env.bak/
 venv.bak/
 CLAUDE.md
 .CLAUDE.md
+.run.txt
 
 # Spyder project settings
 .spyderproject

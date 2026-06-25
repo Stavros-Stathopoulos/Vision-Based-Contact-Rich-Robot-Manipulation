@@ -1,0 +1,45 @@
+venv , python -m src.models.train_rl
+How to Run Everything for the Presentation
+Always run from the project root and activate the venv first:
+
+
+cd "e:\Upatras\Intelligent Control\Project\Github\Vision-Based-Contact-Rich-Robot-Manipulation"
+.\venv311\Scripts\activate
+1. Train the SAC RL Agent (already running now)
+
+python -m src.models.train_rl
+Trains for 50k timesteps with horizon=500
+Saves model to SAC_50k.zip
+Takes ~35 min with your GPU
+2. Test the RL Agent (live window + chart)
+
+python -m src.models.test_rl
+Opens a live MuJoCo window showing the Panda arm
+Runs 5 episodes with deterministic actions
+Saves reward chart to rl_logs/evaluation_live_plot.png
+3. Run the Visual Demo (videos + snapshots)
+
+python run_visual_demo.py
+Opens live window + saves MP4 videos per episode
+Saves start/mid/end snapshot composites
+Saves reward bar chart
+All output in ./visual_results/
+4. Collect Expert Demos (for Behavior Cloning)
+
+python -m src.demos.collect_demos
+Runs the heuristic baseline controller
+Saves successful trajectories to expert_demos.npz
+5. Train Behavior Cloning
+
+python -m src.models.train_bc
+Trains BC policy on collected demos
+Saves weights to bc_model.pth
+6. Evaluate Behavior Cloning
+
+python -m src.models.evaluate_bc
+Runs 20 episodes, prints success rate and mean reward
+7. Run the Benchmark Baseline (simple mid-point controller)
+
+python main.py
+Runs the SimpleController (constant mid-point action)
+Prints episode reward — this is your worst-case baseline
