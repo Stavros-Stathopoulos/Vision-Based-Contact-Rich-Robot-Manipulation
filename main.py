@@ -1,3 +1,8 @@
+import os
+import platform
+if platform.system() == "Windows":
+    os.environ.setdefault("MUJOCO_GL", "glfw")
+
 import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
 

@@ -1,15 +1,18 @@
 import os
+import platform
+if platform.system() == "Windows":
+    os.environ.setdefault("MUJOCO_GL", "glfw")
+
 import numpy as np
-import pandas as pd
 import matplotlib
-matplotlib.use('Qt5Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import robosuite as suite
 from robosuite.controllers import load_composite_controller_config
 from stable_baselines3 import SAC
 from src.environments.gym_wrapper import RobosuiteGymWrapper
 
-def test_rl_agent(model_path="SAC.zip", num_episodes=5):
+def test_rl_agent(model_path="SAC_100k.zip", num_episodes=5):
     controller_config = load_composite_controller_config(controller="BASIC")
     
     print("Αρχικοποίηση περιβάλλοντος MuJoCo με LIVE Rendering\n")
@@ -28,6 +31,7 @@ def test_rl_agent(model_path="SAC.zip", num_episodes=5):
         camera_widths=84,
         control_freq=20,
         horizon=500,
+        reward_shaping=True,
     )
     
     env = RobosuiteGymWrapper(raw_env)
@@ -66,7 +70,7 @@ def test_rl_agent(model_path="SAC.zip", num_episodes=5):
     print("\nΠαραγωγή διαγράμματος\n")
     plt.figure(figsize=(8, 4))
     plt.bar([f"Ep {i+1}" for i in range(num_episodes)], episode_rewards, color='teal', alpha=0.8)
-    plt.title("Evaluation Rewards per Episode (SAC 10k Steps Checkpoint)")
+    plt.title("Evaluation Rewards per Episode (SAC Agent)")
     plt.xlabel("Episodes")
     plt.ylabel("Total Reward")
     plt.grid(axis='y', linestyle='--', alpha=0.7)
