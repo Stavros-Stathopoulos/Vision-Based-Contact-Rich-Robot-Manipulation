@@ -1,14 +1,21 @@
 # --- Core Simulation & Physics ---
-mujoco==3.1.4
-robosuite==1.4.1
+# robosuite 1.5.x provides the composite-controller API used across the code
+# (load_composite_controller_config). It requires mujoco>=3.3.0; mujoco>=3.10
+# breaks the OSC controller (mj_fullM signature change), so pin to 3.3.0.
+mujoco==3.3.0
+robosuite==1.5.2
 
 # --- Deep Learning Framework ---
 torch==2.2.1
 torchvision==0.17.1
 
 # --- Reinforcement Learning & Environments ---
+# Plain SB3 (not [extra]): the extra pulls shimmy[atari]->ale-py, which has no
+# wheel for Python 3.12. tqdm+rich cover the only extra we use (progress_bar).
 gymnasium==0.29.1
-stable-baselines3[extra]==2.3.0
+stable-baselines3==2.3.0
+tqdm
+rich
 
 # --- Data Processing & Math ---
 numpy==1.26.4
@@ -18,5 +25,5 @@ scipy==1.12.0
 # --- Visualization & Logging ---
 matplotlib==3.8.3
 imageio==2.34.0
-imageio-ffmpeg==0.4.9
+imageio-ffmpeg>=0.6.0   # 0.4.9 uses pkg_resources, removed in setuptools>=81
 psutil==5.9.8
