@@ -226,6 +226,7 @@ __marimo__/
 *.pth
 *.csv
 *.log
-*SAC.zip
+*.zip
 
 CLAUDE.md
+*.mp4
