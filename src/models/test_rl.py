@@ -30,8 +30,10 @@ def test_rl_agent(model_path="SAC.zip", num_episodes=5):
         horizon=500,
     )
     
-    env = RobosuiteGymWrapper(raw_env)
-    
+    # Στην αξιολόγηση απενεργοποιούμε το dense reaching shaping ώστε το reported
+    # reward να αντικατοπτρίζει την πραγματική απόδοση στο task (όχι το shaping).
+    env = RobosuiteGymWrapper(raw_env, reach_reward_scale=0.0)
+
     if not os.path.exists(model_path):
         print(f"Δεν βρέθηκε το αρχείο μοντέλου: {model_path}.\n")
         return
