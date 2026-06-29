@@ -1,0 +1,361 @@
+\documentclass[10pt]{article}
+
+% ----------------------------------------------------------------------------
+% Vision-Based Contact-Rich Robot Manipulation -- Technical Report
+% Intelligent Control 2025-2026, Team 2
+% Content is grounded in the actual repository code and trained artifacts
+% (expert_demos.npz, bc_model.pth, SAC_100k.zip) inspected directly.
+% ----------------------------------------------------------------------------
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\setlength{\parskip}{0.1em}
+
+% booktabs is unavailable on minimal TeX installs; provide compatible rules.
+\providecommand{\toprule}{\hline\noalign{\smallskip}}
+\providecommand{\midrule}{\noalign{\smallskip}\hline\noalign{\smallskip}}
+\providecommand{\bottomrule}{\noalign{\smallskip}\hline}
+
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+\title{\vspace{-3.0em}\textbf{Vision-Based Contact-Rich Robot Manipulation:\\
+A Scripted Oracle, Behaviour Cloning, and SAC on robosuite \texttt{NutAssembly}}}
+\author{\normalsize Intelligent Control 2025--2026, Team 2 \quad(robosuite / Franka Panda)}
+\date{\vspace{-1.2em}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent We study vision-only control of a 7-DOF Franka Emika Panda for the
+robosuite \code{NutAssembly} task (round nut onto peg) under the benchmark
+constraint \code{use\_object\_obs=False}: the deployed policy consumes only the
+$84{\times}84$ \code{agentview} RGB image. Three controllers are compared along
+the project's required axis (simple baseline vs.\ learning method): (i) a scripted
+\emph{closed-loop oracle} that reads privileged simulator state and solves the
+task via a proportional finite-state machine ($\approx$83\% success, training-only
+upper bound); (ii) a frame-stacked, dual-head convolutional \emph{behaviour-cloning}
+(BC) policy distilled from 24 successful oracle trajectories (3{,}084 image--action
+pairs), optionally refined with DAgger; and (iii) a \emph{Soft Actor--Critic}
+(SAC) agent trained end-to-end from pixels with privileged reward shaping. We
+report the measured behaviour of each: the oracle is a reliable demonstrator and
+upper bound; the SAC agent learns a stable \emph{reaching} behaviour
+($\overline{r}_{\text{ep}}\!\approx\!0.24\text{--}0.28$) but does not complete
+insertions within budget; and the vision BC policy reaches the handle to
+$\sim$1\,cm yet fails to grasp, yielding 0\% task success. We analyse why --- the
+sub-centimetre depth and wrist-yaw precision the grasp requires is not recoverable
+from $84{\times}84$ RGB --- and document the design decisions (dual gripper head,
+frame stacking, action smoothing, CPU-budget encoder) made in response.
+The whole codebase, excists here, https://github.com/Stavros-Stathopoulos/Vision-Based-Contact-Rich-Robot-Manipulation
+\end{abstract}
+
+% ============================================================================
+\section{Methodology}
+% ============================================================================
+
+\paragraph{Task and observation contract.}
+The benchmark is robosuite's \code{NutAssembly} with a \code{Panda} arm and
+\code{PandaGripper}, driven by the composite \code{BASIC} (operational-space)
+controller at \code{control\_freq=20}. All scripts construct the environment
+through a single factory, \code{make\_nut\_env()}, which fixes the configuration:
+\code{single\_object\_mode=2} (the rotation-symmetric \emph{round} nut, avoiding
+square-hole yaw alignment), a single \code{agentview} camera at $84{\times}84$,
+\code{reward\_shaping=True}, and crucially \code{use\_object\_obs=False} so that
+\emph{no} privileged object coordinates ever enter a policy observation. The
+action vector is 7-dimensional: $a_{0:3}$ Cartesian end-effector velocity (each
+unit $\approx 0.05$\,m/step), $a_{3:6}$ orientation deltas (only the wrist-yaw
+$a_5$ is exercised), and $a_6$ the gripper command ($-1$ open, $+1$ close). A
+common \code{BaseController} interface (\code{reset(seed)}, \code{act(obs)$\to$(action,
+info)}) makes the three controllers interchangeable and matches the graded
+submission contract; \code{info} is logging-only and never touches the
+environment, reward, termination, seed, or score.
+
+\paragraph{(1) Scripted oracle (privileged, training-only).}
+\code{OracleController} is a reactive expert and the demonstration generator. It
+never calls \code{act()}; instead \code{place\_nut()} runs an 8-phase finite-state
+machine, reading live MuJoCo state each step: the nut \emph{handle} site, nut
+\emph{centre} body, peg body, and end-effector site. Each phase servos with a
+clipped proportional law
+\[
+  a_{0:3} = \mathrm{clip}\!\Big(\tfrac{K\,(p^{\star}-p_{\text{eef}})}{0.05},\,-1,\,1\Big),
+  \qquad
+  a_5 = \mathrm{clip}\!\Big(\tfrac{2.5\,\Delta\psi}{0.5},\,-1,\,1\Big),
+\]
+where $p^\star$ is the per-phase target and $\Delta\psi$ is the wrap-to-$\pi$ error
+between the desired yaw and the measured finger-closing axis. Two geometric
+insights make it reliable: the gripper grasps the \emph{protruding handle} (offset
+$\sim$6\,cm from the hole), so during transport the \emph{nut centre} --- not the
+end-effector --- is servoed onto the peg; and the closing axis is aligned
+perpendicular to the handle rod so the fingers actually pinch it. The phases are:
+hover above handle (open) $\to$ descend $\to$ close (no XY push) $\to$ lift $\to$
+transport nut-centre over peg $\to$ lower onto peg $\to$ release $\to$ retreat,
+gated by per-phase tolerances (e.g.\ XY error $<5$\,mm to stop hovering, place
+tolerance $4$\,mm). Success is the environment's own \code{\_check\_success()}.
+The oracle is privileged and therefore \emph{not} a valid vision submission; it
+serves as the upper-bound baseline and the expert.
+
+\paragraph{(2) Vision behaviour cloning (the deliverable).}
+The submitted policy is vision-only. The shared encoder \code{CNNEncoder} is a
+lightweight NatureCNN: three convolutions
+$(8{\times}8,\,s4)\!\to\!(4{\times}4,\,s2)\!\to\!(3{\times}3,\,s1)$ mapping
+$84{\times}84$ through $20{\times}20\!\to\!9{\times}9\!\to\!7{\times}7$, flattened to
+$64\cdot7\cdot7=3136$ features and projected to a 256-d embedding. The aggressive
+stride-4 first layer is a deliberate compute/precision trade: it cuts the flattened
+dimension $\sim$6$\times$ (vs.\ $18{,}496$ for a stride-2 variant), which keeps
+training and inference tractable on CPU-only machines.
+
+The trained behaviour-cloning network (verified from the saved
+\code{bc\_model.pth} weights) is \emph{frame-stacked} and \emph{dual-headed}. Its
+input is $K{=}2$ consecutive frames concatenated on the channel axis
+(6$\times$84$\times$84; encoder first conv weight $32{\times}6{\times}8{\times}8$),
+giving the network a temporal/velocity cue that a single frame lacks. The shared
+256-d embedding feeds two heads: a \emph{continuous head}
+($256\!\to\!128\!\to\!6$, \code{Tanh}) regressing $a_{0:6}$ under MSE, and a
+\emph{separate binary gripper head} ($256\!\to\!128\!\to\!1$ logit) trained with
+binary cross-entropy against $\mathbf{1}[a_6>0]$. This split is the central design
+decision: a single MSE objective over the \emph{bimodal} gripper channel averages
+toward ``open'' and never commands a firm close, so the policy never grasps;
+isolating the gripper as a classifier restores the close signal. Frame stacking is
+applied identically at train and inference time through one shared module
+(\code{frame\_stack.py}: \code{StackedBCDataset} / \code{FrameStacker}), so the
+deployed input distribution matches training; stacking never crosses an episode
+boundary (padded by repeating the first frame). At deployment the controller
+$/255$-normalises pixels, feeds the \code{FrameStacker} buffer, runs the net, and
+hard-thresholds the gripper logit to $\pm1$; action smoothing is available as a
+benchmark-legal post-filter on the continuous deltas.
+
+\paragraph{DAgger refinement.} Because pure BC suffers compounding error on
+states the expert never visited, \code{train\_dagger.py} rolls out the current
+policy but relabels \emph{every visited state} with the oracle's action, aggregates
+the $(\text{image},\,\text{oracle action})$ pairs into the dataset, and retrains
+(3 iterations $\times$ 8 rollouts by default). The oracle relabels from true state
+and is therefore always correct, even on the policy's off-distribution frames.
+
+\paragraph{(3) SAC from pixels (learning baseline).}
+\code{RobosuiteGymWrapper} adapts robosuite to the Gymnasium API: it extracts
+\code{agentview\_image}, transposes HWC$\to$CHW to a \code{uint8 (3,84,84)}
+observation, and exposes the $[-1,1]^7$ action box. SAC (\code{CnnPolicy}) reuses
+\code{CNNEncoder} as its \code{features\_extractor}. To make the contact-rich
+task learnable, the wrapper adds a \emph{dense reaching reward}
+$r_{\text{reach}} = \beta\,[1-\tanh(\alpha\, d_{\text{eef,nut}})]$ with
+$\beta{=}0.5,\ \alpha{=}10$, on top of the environment's shaped reward; like the
+oracle this reads privileged positions \emph{only} for the reward, never as policy
+input, so the vision-only contract is preserved.
+
+% ============================================================================
+\section{Experimental Procedure}
+% ============================================================================
+
+\paragraph{Software/hardware.} robosuite 1.5.2 on MuJoCo 3.3.0 (pinned:
+mujoco$\ge$3.10 breaks the OSC \code{mj\_fullM} signature), PyTorch 2.2.1,
+Stable-Baselines3 2.3.0 (without \code{[extra]}), Gymnasium 0.29.1, Python 3.12 in
+a \code{.venv}. Offscreen rendering is required for camera observations; headless
+runs set \code{MUJOCO\_GL=egl}. The device is auto-detected (CUDA else CPU); on
+CPU the thread count is capped (4) to keep the machine responsive.
+
+\paragraph{Orchestration and the MuJoCo memory leak.} \code{run\_pipeline.py}
+runs each core stage --- \code{wrapper\,$\to$\,oracle\,$\to$\,collect\,$\to$\,
+train\_bc\,$\to$\,eval\_bc}, with \code{train\_rl}/\code{test\_rl} opt-in
+(\code{--all}) and \code{train\_dagger} invoked manually --- as an
+\emph{isolated subprocess}, skipping any stage whose output already exists
+(\code{--force} reruns). This structure is a direct response to a measured MuJoCo
+defect: RAM leaks across \code{env.reset()}, so a long single process is
+infeasible; per-stage isolation, forced \code{gc.collect()} per episode, and (for
+RL) \code{optimize\_memory\_usage=True} are the mitigations. Key knobs are
+environment variables (\code{DEMO\_EPISODES}, \code{DAGGER\_ITERS},
+\code{BC\_EPOCHS}, \code{SAC\_TIMESTEPS}).
+
+\paragraph{Demonstration collection.} \code{collect\_demos.py} runs the oracle until
+a target number of \emph{successful} episodes is reached, recording the
+\emph{pre-step} image paired with the action taken (\code{image\_t}$\,\to\,a_t$;
+failures are discarded). The shipped dataset \code{expert\_demos.npz} contains
+\textbf{3{,}084 frames from 24 successful episodes} ($\approx$128 steps/episode),
+stored as \code{uint8 (3084,84,84,3)} states, \code{float32 (3084,7)} actions, and
+\code{episode\_ids} $0\ldots23$ that mark episode boundaries so frame-stacking
+never bridges two episodes. Table~\ref{tab:actions} reports the per-dimension
+action statistics measured directly from the dataset; note $a_3,a_4\equiv0$
+(orientation X/Y unused) and the strongly \emph{bimodal} gripper channel.
+
+\begin{table}[t]
+\centering
+\caption{Per-dimension action statistics over the 3{,}084 demonstration frames
+(measured from \code{expert\_demos.npz}). The gripper ($a_6$) is bimodal: 1{,}183
+open vs.\ 1{,}901 close commands.}
+\label{tab:actions}
+\small
+\begin{tabular}{l c c c}
+\toprule
+Dim & Meaning & Mean & Std \\
+\midrule
+$a_0$ & EEF $x$        & $+0.304$ & $0.481$ \\
+$a_1$ & EEF $y$        & $-0.124$ & $0.407$ \\
+$a_2$ & EEF $z$        & $-0.047$ & $0.627$ \\
+$a_3$ & orient.\ $x$   & $0.000$  & $0.000$ \\
+$a_4$ & orient.\ $y$   & $0.000$  & $0.000$ \\
+$a_5$ & wrist yaw      & $+0.061$ & $0.423$ \\
+$a_6$ & gripper        & $+0.233$ & $0.973$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{BC / DAgger training.} States are $/255$-normalised and reshaped to
+PyTorch CHW. Optimisation uses Adam ($\text{lr}=10^{-3}$, weight decay $10^{-4}$ in
+the DAgger retrainer), batch 32--64, with the composite loss
+$\mathcal{L}=\text{MSE}(\hat a_{0:6},a_{0:6})+\text{BCE}(\hat g,\mathbf{1}[a_6>0])$.
+Evaluation (\code{evaluate\_bc.py}) rolls the policy deterministically and counts
+success via \code{\_check\_success()} --- \emph{not} reward${>}0$, which the shaped
+reward makes positive even on failure --- at a long horizon ($\geq500$, the
+benchmark length, up to 900 to match the oracle).
+
+\paragraph{SAC training.} \code{train\_rl.py} trains SAC with learning rate
+$3\times10^{-4}$, replay buffer $30$k, batch $64$, \code{optimize\_memory\_usage}
+(halving buffer RAM), at a shortened \code{horizon=200} to densify episodes. The
+shipped checkpoint is \code{SAC\_100k.zip} ($\approx$56\,MB), i.e.\ 100k
+environment steps. Hyperparameters are summarised in Table~\ref{tab:hyper}.
+
+\begin{table}[t]
+\centering
+\caption{Key training settings (from the scripts and saved artifacts).}
+\label{tab:hyper}
+\small
+\begin{tabular}{l l}
+\toprule
+\multicolumn{2}{l}{\textbf{Encoder (shared)}}\\
+\midrule
+Conv stack & $8{\times}8/s4,\,4{\times}4/s2,\,3{\times}3/s1$ \\
+Spatial    & $84\to20\to9\to7$ \\
+Flatten / embed & $3136 \to 256$ \\
+\midrule
+\multicolumn{2}{l}{\textbf{Behaviour cloning}}\\
+\midrule
+Input         & $K{=}2$ stacked frames ($6{\times}84{\times}84$) \\
+Heads         & cont.\ $256{\to}128{\to}6$ Tanh; grip $256{\to}128{\to}1$ \\
+Loss          & MSE (cont) $+$ BCE (gripper) \\
+Optimiser     & Adam $10^{-3}$, wd $10^{-4}$, batch 32--64 \\
+Dataset       & 3{,}084 frames / 24 oracle episodes \\
+\midrule
+\multicolumn{2}{l}{\textbf{SAC}}\\
+\midrule
+Policy        & \code{CnnPolicy} + \code{CNNEncoder} (256) \\
+lr / buffer   & $3{\times}10^{-4}$ / $30$k, batch 64 \\
+Reward        & shaped $+\,0.5[1{-}\tanh(10\,d_{\text{eef,nut}})]$ \\
+Horizon / steps & 200 / 100k (\code{SAC\_100k.zip}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+\section{Analysis}
+% ============================================================================
+
+\paragraph{Why the oracle works.} The oracle sidesteps perception entirely:
+operating on exact handle/centre/peg coordinates, the proportional FSM reduces the
+problem to sequential set-point regulation with generous tolerances. Its two
+non-trivial choices --- pinching the offset \emph{handle} and servoing the nut
+\emph{centre} (not the end-effector) over the peg --- are exactly the geometric
+facts a vision policy must \emph{infer} but cannot measure. This is why it is a
+fair upper bound and an ideal relabelling expert, but disqualified as a submission.
+
+\paragraph{Why the gripper head is dual.} The demonstration gripper channel is
+bimodal (Table~\ref{tab:actions}: 38\% open / 62\% close, std $0.97$). Under a
+single MSE regression head, the minimiser of $\mathbb{E}[(\hat g - g)^2]$ is the
+\emph{mean} ($\approx\!+0.23$), a soft value that, after thresholding, rarely
+commits to a firm close at the right instant --- the policy hovers and never grasps,
+and since grasp gates lift/transport/insert, the whole task fails. Re-casting the
+gripper as a Bernoulli decision with a dedicated BCE head removes the averaging
+pathology. This is the single most important architectural lesson of the project
+and is why the deployed model carries two heads rather than one.
+
+\paragraph{Why frame stacking and smoothing.} A single $84{\times}84$ frame is
+nearly static between consecutive control steps; stacking $K{=}2$ frames supplies an
+implicit velocity signal (approach speed, contact onset) that a Markovian
+single-frame input cannot encode, at negligible cost (6 vs.\ 3 input channels).
+EMA action smoothing at deployment suppresses the high-frequency jitter that an
+open-loop regressor would otherwise inject into a contact-rich phase. Both are
+explicitly benchmark-legal techniques (frame stacking, action smoothing).
+
+\paragraph{Why vision BC still reaches 0\% --- a measured failure, not a guess.}
+The cloned policy executes the \emph{coarse approach} correctly: the arm reaches
+within $\sim$1\,cm of the handle. It then fails to fire a reliable ``close.'' The
+gripper head fits the \emph{training} frames essentially perfectly (saturated
+logits) yet does not generalise, because the discriminative cue --- sub-centimetre
+depth to the handle and the wrist-yaw that aligns the fingers to a $\sim$6\,cm
+offset rod --- simply is not recoverable from a single $84{\times}84$ RGB view. The
+oracle reads these from \code{sim}; the camera cannot resolve them. DAgger cannot
+rescue this regime: when \emph{every} rollout fails identically at the grasp, the
+aggregated states are all more \emph{approach} frames, so relabelling adds no new
+information about the missing grasp decision. The benchmark-legal levers actually
+applied --- more demonstrations, dropout/weight-decay regularisation, the dual head,
+frame stacking, action smoothing --- improve the approach and the training fit but
+do not manufacture the missing pixels. Crucially, the obvious fixes (higher
+resolution, a wrist \code{eye\_in\_hand} camera) are \emph{prohibited at scoring}:
+the fixed benchmark sensing is \code{agentview} at $84{\times}84$, so they are valid
+only as training-time ablations, never as a runtime dependency of the submission.
+
+\paragraph{Why SAC plateaus at reaching.} The dense
+$1-\tanh(10\,d)$ term is informative for \emph{approach} but provides almost no
+gradient for the precise grasp-and-insert, which requires a long, low-probability
+sequence of correct contacts. Within 100k steps at horizon 200 the agent reliably
+optimises the easy component --- driving the gripper to the nut --- and its episodic
+return stabilises around $0.24$--$0.28$, consistent with ``reach but do not insert.''
+This mirrors the BC outcome from the opposite direction: both methods solve the
+visually-easy reaching sub-task and stall at the perception-limited grasp.
+
+% ============================================================================
+\section{Results}
+% ============================================================================
+
+Table~\ref{tab:results} consolidates the measured outcomes. The privileged oracle
+is the only controller that completes the full pick--transport--insert sequence,
+at $\approx$83\% over repeated episodes; it is the demonstrator and the practical
+ceiling. Both vision-only learners solve the reaching sub-task but not the contact
+grasp: SAC stabilises at $\overline{r}_{\text{ep}}\!\approx\!0.24$--$0.28$ (reach,
+no insertion), and the BC/DAgger policy --- despite a near-perfect training fit and
+$\sim$1\,cm approach accuracy --- scores 0\% task success because the grasp-critical
+depth and yaw are unobservable at $84{\times}84$. The deliverables produced are the
+3{,}084-frame demonstration set (\code{expert\_demos.npz}), the dual-head BC weights
+(\code{bc\_model.pth}, $\approx$3.8\,MB), the 100k-step SAC checkpoint
+(\code{SAC\_100k.zip}, $\approx$56\,MB), and an oracle demonstration video
+(\code{oracle\_demo.mp4}).
+
+\begin{table}[t]
+\centering
+\caption{Measured controller outcomes on the round-nut \code{NutAssembly} task.
+Success is \code{\_check\_success()}; the oracle uses privileged state and is
+training-only.}
+\label{tab:results}
+\small
+\begin{tabular}{l l l}
+\toprule
+Controller & Observation & Outcome \\
+\midrule
+Heuristic FSM   & time-only & open-loop; no closed grasp \\
+Oracle          & privileged & $\approx$83\% success (ceiling) \\
+SAC (100k)      & pixels & reach only, $\overline{r}_{\text{ep}}\!\approx\!0.24$--$0.28$ \\
+BC + DAgger     & pixels & $\sim$1\,cm approach; \textbf{0\% success} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Reproducibility.} Every number above is regenerable from the committed
+pipeline: \code{python -m src.models.test\_oracle} for the oracle rate,
+\code{python -m src.models.evaluate\_bc} (horizon 500) for BC success, and the SAC
+return from the Stable-Baselines3 \code{Monitor} log during \code{train\_rl}. The
+single environment factory guarantees all three controllers face identical task
+configuration.
+
+\paragraph{Takeaways and outlook.} The project satisfies the required
+two-approach comparison (scripted baseline/oracle vs.\ BC/DAgger \emph{and} SAC) and
+yields a clear, measured diagnosis rather than an unexplained 0\%: at the fixed
+$84{\times}84$ \code{agentview} sensing, the bottleneck is \emph{perceptual
+resolution at the grasp}, not optimisation or interface. The benchmark-legal levers
+that remain genuinely open are (i) training-time domain randomisation of nut/peg
+pose, lighting, and viewpoint to harden the approach and add recovery behaviour,
+the dimension the hidden stress tests reward, and (ii) richer temporal/recurrent
+state to better exploit the two-frame motion cue --- both consuming only benchmark
+observations at deployment.
+
+\end{document}
