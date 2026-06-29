@@ -1,53 +1,32 @@
-import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
-from .gym_wrapper import RobosuiteGymWrapper
+"""Smoke-test the Gym wrapper: verifies the Dict observation space, shapes,
+dtypes, and the terminated/truncated/is_success contract."""
+
+from .make_env import make_env
+
 
 def test_wrapper():
-    print("Initializing raw robosuite environment")
-    controller_config = load_composite_controller_config(controller="BASIC")
-    
-    raw_env = suite.make(
-        env_name="NutAssembly",
-        robots="Panda",
-        gripper_types="PandaGripper",
-        controller_configs=controller_config,
-        has_renderer=False,
-        has_offscreen_renderer=True,
-        use_camera_obs=True,
-        use_object_obs=False,  # Raw pixels μόνο
-        camera_names="agentview",
-        camera_heights=84,
-        camera_widths=84,
-        control_freq=20,
-        horizon=50,
-    )
-    
-    print("Wrapping environment into Gymnasium API")
-    env = RobosuiteGymWrapper(raw_env)
-    
-    # Έλεγχος των Spaces
-    print("\n--- Spaces Verification ---")
-    print(f"Action Space:      {env.action_space}")
-    print(f"Observation Space: {env.observation_space}")
-    
-    # Δοκιμαστικό Reset
-    print("\nTesting env.reset()")
+    print("Building wrapped NutAssembly env...")
+    env = make_env(horizon=50)
+
+    print("\n--- Spaces ---")
+    print(f"Action space:      {env.action_space}")
+    print(f"Observation space: {env.observation_space}")
+
+    print("\nReset...")
     obs, info = env.reset()
-    print(f"Reset Obs Shape: {obs.shape}")
-    print(f"Reset Obs Type:  {obs.dtype}")
-    
-    # Δοκιμαστικό Step με τυχαία δράση
-    print("\nTesting env.step() with a random action")
-    random_action = env.action_space.sample()
-    obs, reward, terminated, truncated, info = env.step(random_action)
-    
-    print(f"Step Obs Shape:  {obs.shape}")
-    print(f"Reward Received:  {reward:.4f}")
-    print(f"Terminated:       {terminated}")
-    print(f"Truncated:        {truncated}")
-    
-    print("\nWrapper test complete! Closing environment.")
+    print(f"  image   shape={obs['image'].shape} dtype={obs['image'].dtype}")
+    print(f"  proprio shape={obs['proprio'].shape} dtype={obs['proprio'].dtype}")
+    assert obs["image"].dtype.name == "uint8"
+    assert set(obs.keys()) == {"image", "proprio"}, "policy must only see image + proprio"
+
+    print("\nStep with a random action...")
+    obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+    print(f"  reward={reward:.4f} terminated={terminated} truncated={truncated} "
+          f"is_success={info.get('is_success')}")
+
     env.close()
+    print("\nWrapper test complete.")
+
 
 if __name__ == "__main__":
     test_wrapper()

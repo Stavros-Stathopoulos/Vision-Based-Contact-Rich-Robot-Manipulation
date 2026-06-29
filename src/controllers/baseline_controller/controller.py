@@ -11,10 +11,9 @@ class HeuristicBaselineController(BaseController):
         self.action_dim = action_dim
         self.step_counter = 0
         
-    def reset(self) -> None:
+    def reset(self, seed=None) -> None:
         """ Resets the internal state machine for a new episode. """
         self.step_counter = 0
-        print("Baseline Controller reset for a new episode.")
 
     def act(self, obs: dict) -> tuple[np.ndarray, dict]:
         """

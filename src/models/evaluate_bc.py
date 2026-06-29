@@ -7,8 +7,8 @@ import gc
 import numpy as np
 import torch
 import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
-from .bc_model import BehaviorCloningPolicy 
+from ..environments.make_env import make_controller_config
+from .bc_model import BehaviorCloningPolicy
 
 def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=500):
     """
@@ -23,7 +23,7 @@ def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=500)
     model.eval()  
     
     print("Initializing evaluation environment...")
-    controller_config = load_composite_controller_config(controller="BASIC")
+    controller_config = make_controller_config()
     
     env = suite.make(
         env_name="NutAssembly",

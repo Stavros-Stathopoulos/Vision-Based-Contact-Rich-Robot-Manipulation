@@ -2,75 +2,65 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+from .observation import ObservationProcessor
+from ..config import NUM_STACK
+
+
 class RobosuiteGymWrapper(gym.Env):
+    """Adapts a robosuite env to the Gymnasium API for Stable-Baselines3.
+
+    Key differences from a naive wrapper:
+
+    * Observation is a Dict {image, proprio} built by `ObservationProcessor`
+      (image-only + robot proprioception; no object/nut state).
+    * Correct episode semantics: `terminated` is set ONLY on true task success
+      (`env._check_success()`); reaching the horizon is reported as `truncated`.
+      This lets SAC bootstrap past timeouts instead of treating them as real
+      terminal states (which otherwise biases the value function downward and
+      encourages the "hover near the nut" local optimum).
+    * `info["is_success"]` exposes the true success flag for honest metrics.
     """
-    Custom Wrapper που μετατρέπει ένα περιβάλλον robosuite σε standard Gymnasium Environment
-    για εκπαίδευση με αλγορίθμους Reinforcement Learning (SAC or TD3).
-    """
-    def __init__(self, env):
-        super(RobosuiteGymWrapper, self).__init__()
+
+    metadata = {"render_modes": ["human"]}
+
+    def __init__(self, env, num_stack: int = NUM_STACK):
+        super().__init__()
         self.env = env
-        
-        # 1. Action Space Mapping (7 continuous actions για τον Panda)
-        # Κανονικοποιημένος χώρος στο [-1, 1]
+        self.processor = ObservationProcessor(num_stack=num_stack)
+
+        low, high = env.action_spec
         self.action_space = spaces.Box(
-            low=-1.0, 
-            high=1.0, 
-            shape=self.env.action_spec[0].shape, 
-            dtype=np.float32
-        )
-        
-        # 2. Observation Space Refactoring (PyTorch format: [Channels, Height, Width])
-        # Η εικόνα από (84, 84, 3) μετατρέπεται σε (3, 84, 84)
-        self.observation_space = spaces.Box(
-            low=0, 
-            high=255, 
-            shape=(3, 84, 84), 
-            dtype=np.uint8
+            low=-1.0, high=1.0, shape=low.shape, dtype=np.float32
         )
 
-    def obs_space_refactor(self, robosuite_obs):
-        """Μετατρέπει το robosuite observation dict σε standard Gym image tensor."""
-        # Απομόνωση της agentview εικόνας
-        img = robosuite_obs["agentview_image"]
-        
-        # Transpose από (H, W, C) σε (C, H, W) για να είναι συμβατό με PyTorch/RL CNNs
-        img = np.transpose(img, (2, 0, 1))
-        
-        # Επιστροφή ως contiguous numpy array
-        return np.ascontiguousarray(img, dtype=np.uint8)
+        # Build the observation space from one real reset, and reuse that
+        # observation for the first episode so we don't pay for two MuJoCo
+        # resets (resets are expensive and leak renderer memory).
+        self._pending_raw = self.env.reset()
+        self.observation_space = self.processor.build_spaces(self._pending_raw)
 
     def reset(self, seed=None, options=None):
-        """Επαναφέρει το περιβάλλον και επιστρέφει το επεξεργασμένο observation."""
         super().reset(seed=seed)
-        
-        # Reset στο robosuite environment
-        robosuite_obs = self.env.reset()
-        
-        # Επεξεργασία της αρχικής εικόνας
-        obs = self.obs_space_refactor(robosuite_obs)
-        info = {}
-        
-        return obs, info
+        if self._pending_raw is not None:
+            raw, self._pending_raw = self._pending_raw, None
+        else:
+            raw = self.env.reset()
+        return self.processor.reset(raw), {}
 
     def step(self, action):
-        """Εκτελεί τη δράση και επιστρέφει την τυποποιημένη 5-άδα του Gymnasium."""
-        # Εκτέλεση βήματος στο robosuite
-        robosuite_obs, reward, done, info = self.env.step(action)
-        
-        # Επεξεργασία του νέου state
-        obs = self.obs_space_refactor(robosuite_obs)
-        
-        # Διαχωρισμός του done σε terminated και truncated (standard Gymnasium API)
-        terminated = done  # Hard horizon ή success
-        truncated = False  # Μπορείς να το συνδέσεις με το μέγιστο όριο βημάτων αν θες
-        
+        raw, reward, done, info = self.env.step(action)
+        success = bool(self.env._check_success())
+
+        obs = self.processor.observe(raw)
+        terminated = success
+        truncated = bool(done) and not success  # robosuite `done` == horizon hit
+
+        info = dict(info)
+        info["is_success"] = success
         return obs, reward, terminated, truncated, info
 
     def render(self):
-        """Αναθέτει το render στο εσωτερικό περιβάλλον."""
         return self.env.render()
 
     def close(self):
-        """Κλείνει το περιβάλλον ελευθερώνοντας τη μνήμη."""
         self.env.close()

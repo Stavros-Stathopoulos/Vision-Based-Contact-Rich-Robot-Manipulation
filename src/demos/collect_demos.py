@@ -6,7 +6,7 @@ if platform.system() == "Windows":
 import numpy as np
 import gc
 import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
+from ..environments.make_env import make_controller_config
 from ..controllers.baseline_controller import HeuristicBaselineController
 
 # Ρυθμίσεις συλλογής
@@ -16,7 +16,7 @@ MAX_TOTAL_EPISODES = 100 # Μέγιστος αριθμός επεισοδίων
 OUTPUT_FILE = "expert_demos.npz"  # Αρχείο όπου θα αποθηκευτούν οι εικόνες και οι δράσεις των επιτυχημένων τροχιών
 
 print("Initializing environment for data collection")
-controller_config = load_composite_controller_config(controller="BASIC")
+controller_config = make_controller_config()
 
 env = suite.make(
     env_name="NutAssembly",

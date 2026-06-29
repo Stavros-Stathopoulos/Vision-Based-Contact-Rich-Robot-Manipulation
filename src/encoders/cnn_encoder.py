@@ -10,14 +10,16 @@ from .base_encoder import BaseEncoder
 _CONV_OUT_DIM = 64 * 17 * 17  # 18,496 features
 
 class CNNEncoder(BaseEncoder):
-    def __init__(self, observation_space=None, embedding_dim: int = 256):
+    def __init__(self, observation_space=None, embedding_dim: int = 256, in_channels: int = 3):
         super().__init__()
         self._embedding_dim = embedding_dim
         self.features_dim = embedding_dim
 
+        # in_channels > 3 when frames are stacked (e.g. 3 frames -> 9 channels).
+        # Only the first conv's input depth changes; the spatial output stays 17x17.
         # Χρησιμοποιούμε μικρότερα kernels και strides για να μην χάσουμε την πληροφορία των contact-rich λεπτομερειών (παξιμάδι/βίδα)
         self.conv_layers = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=5, stride=2),   # Είσοδος: (3, 84, 84)  -> Έξοδος: (32, 40, 40)
+            nn.Conv2d(in_channels, 32, kernel_size=5, stride=2),  # (C, 84, 84) -> (32, 40, 40)
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, stride=2),  # Είσοδος: (32, 40, 40) -> Έξοδος: (64, 19, 19)
             nn.ReLU(),

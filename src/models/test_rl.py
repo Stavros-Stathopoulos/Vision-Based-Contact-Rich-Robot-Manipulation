@@ -1,83 +1,76 @@
 import os
 import platform
+
 if platform.system() == "Windows":
     os.environ.setdefault("MUJOCO_GL", "glfw")
 
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use("Agg")  # avoid tkinter backend crashes on Windows
 import matplotlib.pyplot as plt
-import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
 from stable_baselines3 import SAC
-from src.environments.gym_wrapper import RobosuiteGymWrapper
 
-def test_rl_agent(model_path="SAC_100k.zip", num_episodes=5):
-    controller_config = load_composite_controller_config(controller="BASIC")
-    
-    print("Αρχικοποίηση περιβάλλοντος MuJoCo με LIVE Rendering\n")
-    # Ενεργοποιούμε το has_renderer=True για να ανοίξει το παράθυρο στα Windows σου
-    raw_env = suite.make(
-        env_name="NutAssembly",
-        robots="Panda",
-        gripper_types="PandaGripper",
-        controller_configs=controller_config,
-        has_renderer=True,             # <--- ΑΝΟΙΓΕΙ ΤΟ ΠΑΡΑΘΥΡΟ ΣΤΑ WINDOWS
-        has_offscreen_renderer=True,   # <--- ΕΠΙΤΡΕΠΕΙ ΣΤΗΝ ΚΑΜΕΡΑ ΝΑ ΒΛΕΠΕΙ
-        use_camera_obs=True,
-        use_object_obs=False,
-        camera_names="agentview",
-        camera_heights=84,
-        camera_widths=84,
-        control_freq=20,
-        horizon=500,
-        reward_shaping=True,
-    )
-    
-    env = RobosuiteGymWrapper(raw_env)
-    
+from src import config
+from src.environments.make_env import make_env
+
+
+def test_rl_agent(model_path: str | None = None, num_episodes: int = 5):
+    # Prefer the best-by-true-success checkpoint, fall back to the final model.
+    if model_path is None:
+        best = config.BEST_MODEL_PATH + ".zip"
+        model_path = best if os.path.exists(best) else config.MODEL_PATH + ".zip"
+
     if not os.path.exists(model_path):
-        print(f"Δεν βρέθηκε το αρχείο μοντέλου: {model_path}.\n")
+        print(f"Model file not found: {model_path}. Train first with `python -m src.models.train_rl`.")
         return
-        
-    print(f"Φόρτωση του εκπαιδευμένου SAC Agent από: {model_path}\n")
+
+    print(f"Opening live MuJoCo window and loading agent from {model_path}\n")
+    env = make_env(has_renderer=True)
     model = SAC.load(model_path, env=env)
-    
+
     episode_rewards = []
-    
-    for episode in range(num_episodes):
+    successes = 0
+
+    for episode in range(1, num_episodes + 1):
         obs, _ = env.reset()
         done = False
-        ep_reward = 0
-        print(f"Έναρξη Episode {episode + 1} στην οθόνη\n")
-        
+        ep_reward = 0.0
+        ep_success = False
+        print(f"Episode {episode}/{num_episodes}...")
+
         while not done:
-            # deterministic=True για να δούμε τι ακριβώς έμαθε ο Agent στα 10k steps
             action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, _ = env.step(action)
+            obs, reward, terminated, truncated, info = env.step(action)
             ep_reward += reward
+            ep_success = ep_success or bool(info.get("is_success", False))
             done = terminated or truncated
-            
-            # Σχεδιάζει live το animation στο παράθυρο των Windows
-            raw_env.render() 
-            
-        print(f"Episode {episode + 1} Finished. Total Reward: {ep_reward:.4f}\n")
+            env.render()  # live animation
+
+        successes += int(ep_success)
         episode_rewards.append(ep_reward)
-        
+        print(f"  reward={ep_reward:.3f}  success={ep_success}")
+
     env.close()
-    
-    # --- ΣΧΕΔΙΑΣΗ ΔΙΑΓΡΑΜΜΑΤΟΣ ΑΠΕΥΘΕΙΑΣ ΑΠΟ ΤΑ LIVE REWARDS ---
-    print("\nΠαραγωγή διαγράμματος\n")
+
+    print(f"\nTrue success rate: {successes / num_episodes:.1%} "
+          f"({successes}/{num_episodes})  mean reward: {np.mean(episode_rewards):.3f}\n")
+
+    # --- Reward plot ---
+    colors = ["seagreen" if r == max(episode_rewards) else "teal" for r in episode_rewards]
     plt.figure(figsize=(8, 4))
-    plt.bar([f"Ep {i+1}" for i in range(num_episodes)], episode_rewards, color='teal', alpha=0.8)
-    plt.title("Evaluation Rewards per Episode (SAC Agent)")
-    plt.xlabel("Episodes")
+    plt.bar([f"Ep {i+1}" for i in range(num_episodes)], episode_rewards, color=colors, alpha=0.85)
+    plt.title(f"SAC Evaluation — {config.TASK_NAME} (success {successes}/{num_episodes})")
+    plt.xlabel("Episode")
     plt.ylabel("Total Reward")
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    
-    os.makedirs("./rl_logs", exist_ok=True)
-    plt.savefig("./rl_logs/evaluation_live_plot.png")
-    print("Το διάγραμμα αποθηκεύτηκε επιτυχώς στο: ./rl_logs/evaluation_live_plot.png\n")
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.tight_layout()
+
+    os.makedirs(config.LOG_DIR, exist_ok=True)
+    out = os.path.join(config.LOG_DIR, "evaluation_live_plot.png")
+    plt.savefig(out)
+    plt.close()
+    print(f"Plot saved to {out}\n")
+
 
 if __name__ == "__main__":
     test_rl_agent()

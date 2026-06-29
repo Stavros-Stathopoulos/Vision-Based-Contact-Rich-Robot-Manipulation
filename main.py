@@ -4,13 +4,13 @@ if platform.system() == "Windows":
     os.environ.setdefault("MUJOCO_GL", "glfw")
 
 import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
 
+from src.environments.make_env import make_controller_config
 from src.controllers import SimpleController
 from src.utils.logger import TerminalLogger as logger
 
 
-controller_config = load_composite_controller_config(controller='BASIC')
+controller_config = make_controller_config()
 env = suite.make(
     env_name="NutAssembly",
     robots="Panda",
