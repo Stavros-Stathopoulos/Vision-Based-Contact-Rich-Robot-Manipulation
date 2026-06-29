@@ -1,18 +1,22 @@
 import os
+import platform
+if platform.system() == "Windows":
+    os.environ.setdefault("MUJOCO_GL", "glfw")
+
 import numpy as np
-import gc  # Για χειροκίνητο garbage collection μετά από κάθε επεισόδιο, αν χρειαστεί
+import gc
 import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
+from ..environments.make_env import make_controller_config
 from ..controllers.baseline_controller import HeuristicBaselineController
 
 # Ρυθμίσεις συλλογής
 NUM_SUCCESSFUL_EPISODES = 10  # Πόσες πλήρεις και επιτυχημένες τροχιές θέλουμε να αποθηκεύσουμε στο dataset μας
-MAX_STEPS_PER_EPISODE = 50  # Μέγιστος αριθμός βημάτων ανά επεισόδιο (5 δευτερόλεπτα με 20Hz). Hard limit για αποφυγή infinite loops σε περίπτωση αποτυχίας.
+MAX_STEPS_PER_EPISODE = 500  # Μέγιστος αριθμός βημάτων ανά επεισόδιο (25 δευτερόλεπτα με 20Hz). Matches benchmark horizon.
 MAX_TOTAL_EPISODES = 100 # Μέγιστος αριθμός επεισοδίων
 OUTPUT_FILE = "expert_demos.npz"  # Αρχείο όπου θα αποθηκευτούν οι εικόνες και οι δράσεις των επιτυχημένων τροχιών
 
 print("Initializing environment for data collection")
-controller_config = load_composite_controller_config(controller="BASIC")
+controller_config = make_controller_config()
 
 env = suite.make(
     env_name="NutAssembly",
@@ -57,7 +61,7 @@ while successful_episodes_counter < NUM_SUCCESSFUL_EPISODES and episode_idx < MA
         ep_images.append(img)
         
         # Λήψη δράσης από τον expert controller
-        action = controller.act(obs)
+        action, _ = controller.act(obs)
         ep_actions.append(action)
         
         # Εκτέλεση βήματος στο MDP

@@ -1,12 +1,16 @@
 import os
+import platform
+if platform.system() == "Windows":
+    os.environ.setdefault("MUJOCO_GL", "glfw")
+
 import gc
 import numpy as np
 import torch
 import robosuite as suite
-from robosuite.controllers import load_composite_controller_config
-from .bc_model import BehaviorCloningPolicy 
+from ..environments.make_env import make_controller_config
+from .bc_model import BehaviorCloningPolicy
 
-def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
+def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=500):
     """
     Live αξιολόγηση της εκπαιδευμένης Behavior Cloning πολιτικής στο περιβάλλον NutAssembly.
     """
@@ -19,7 +23,7 @@ def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
     model.eval()  
     
     print("Initializing evaluation environment...")
-    controller_config = load_composite_controller_config(controller="BASIC")
+    controller_config = make_controller_config()
     
     env = suite.make(
         env_name="NutAssembly",
@@ -36,31 +40,28 @@ def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
         control_freq=20,
         horizon=max_steps,
     )
-    
+
     success_count = 0
+    episode_rewards = []
     print(f"\nRunning {num_episodes} Evaluation Episodes...")
-    
+
     for episode in range(1, num_episodes + 1):
         obs = env.reset()
         episode_reward = 0.0
-        
-        for step in range(max_steps):
-            # Προετοιμασία εικόνας (Normalize & [B, C, H, W])
-            img = obs["agentview_image"] / 255.0  
+        done = False
+
+        while not done:
+            img = obs["agentview_image"] / 255.0
             img_tensor = torch.tensor(img, dtype=torch.float32).permute(2, 0, 1).unsqueeze(0).to(DEVICE)
-            
-            # Live Inference
+
             with torch.no_grad():
                 action_tensor = model(img_tensor)
                 action = action_tensor.squeeze(0).cpu().numpy()
-                
-            # Βήμα στον εξομοιωτή
+
             obs, reward, done, info = env.step(action)
             episode_reward += reward
-            
-            if done:
-                break
-                
+
+        episode_rewards.append(episode_reward)
         if episode_reward > 0.0:
             success_count += 1
             print(f"Episode {episode}: SUCCESS (Reward: {episode_reward:.2f})")
@@ -73,14 +74,16 @@ def evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50):
         gc.collect()
         
     success_rate = (success_count / num_episodes) * 100
+    mean_reward = np.mean(episode_rewards)
     print("\n--- Evaluation Results ---")
     print(f"Total Episodes Tested: {num_episodes}")
     print(f"Successful Episodes: {success_count}")
     print(f"Final Success Rate: {success_rate:.2f}%")
-    
+    print(f"Mean Reward: {mean_reward:.4f}")
+
     env.close()
     return success_rate
 
 if __name__ == "__main__":
     # Αυτό εκτελείται ΜΟΝΟ αν τρέξεις το αρχείο απευθείας από το terminal
-    evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=50)
+    evaluate_bc_model(model_path="bc_model.pth", num_episodes=20, max_steps=500)

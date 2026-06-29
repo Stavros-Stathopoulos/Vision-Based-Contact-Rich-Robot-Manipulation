@@ -13,11 +13,11 @@ class BaseController(ABC):
         pass
     
     @abstractmethod
-
-    def reset(self) -> None:
+    def reset(self, seed=None) -> None:
         """
         Resets the internal state of the controller at the beginning of each episode.
-        Must be implemented by any subclass.
+        Signature matches the benchmark's required controller interface
+        (`reset(self, seed=None)`). Must be implemented by any subclass.
         """
         pass
 

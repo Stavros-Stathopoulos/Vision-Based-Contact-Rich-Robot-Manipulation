@@ -156,6 +156,9 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+CLAUDE.md
+.CLAUDE.md
+.run.txt
 
 # Spyder project settings
 .spyderproject
@@ -227,3 +230,6 @@ __marimo__/
 *.csv
 *.log
 *SAC.zip
+rl_logs/
+
+*.zip
